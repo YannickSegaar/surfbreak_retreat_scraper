@@ -1,28 +1,41 @@
 # Surfbreak Retreat Scraper
 
-Scrapes retreat listings from retreat.guru and enriches them with contact information to build a lead generation database.
+Scrapes retreat listings from multiple platforms and enriches them with contact information to build a lead generation database.
+
+## Supported Platforms
+
+- **retreat.guru** - Global retreat marketplace
+- **bookretreats.com** - Retreat booking platform
 
 ## Pipeline Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Step 1-2: scraper.py                                               │
-│  Scrape retreat.guru → Extract center addresses                     │
+│  Step 1-2: Scrape retreat platform                                  │
+│  - scraper.py (retreat.guru)                                        │
+│  - scraper_bookretreats.py (bookretreats.com)                       │
 │  Output: leads_enriched.csv                                         │
 └─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+                                   │
+                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Step 3: enrich_google.py                                           │
 │  Google Places API → Phone, Website, Google Maps URL                │
 │  Output: leads_google_enriched.csv                                  │
 └─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+                                   │
+                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Step 4: enrich_website.py                                          │
 │  Scrape websites → Email, Instagram, Facebook, LinkedIn, etc.       │
-│  Output: leads_final.csv                                            │
+│  Output: leads_batch.csv                                            │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Step 5: Append to Master Database                                  │
+│  Adds unique_id, source tracking, deduplication                     │
+│  Output: leads_master.csv                                           │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -38,6 +51,12 @@ uv run playwright install chromium
 
 ### 2. Set your Google Places API key
 
+Create a `.env` file:
+```
+GOOGLE_PLACES_API_KEY=your-api-key-here
+```
+
+Or export directly:
 ```bash
 export GOOGLE_PLACES_API_KEY="your-api-key-here"
 ```
@@ -52,32 +71,57 @@ To get an API key:
 
 ### Run the full pipeline
 
+The source platform is **auto-detected** from the URL:
+
 ```bash
-uv run python run_pipeline.py
+# Scrape retreat.guru
+uv run python run_pipeline.py --url "https://retreat.guru/search?topic=yoga&country=mexico" --label "rg-yoga-mexico"
+
+# Scrape bookretreats.com
+uv run python run_pipeline.py --url "https://bookretreats.com/s/yoga-retreats/mexico" --label "br-yoga-mexico"
 ```
 
-### Or run individual steps
+### More examples
 
 ```bash
-# Step 1-2: Scrape retreat.guru
+# Retreat.guru - different searches
+uv run python run_pipeline.py --url "https://retreat.guru/search?topic=meditation&country=costa-rica" --label "rg-meditation-cr"
+uv run python run_pipeline.py --url "https://retreat.guru/search?topic=wellness&country=indonesia" --label "rg-wellness-bali"
+
+# BookRetreats - different searches
+uv run python run_pipeline.py --url "https://bookretreats.com/s/meditation-retreats/bali" --label "br-meditation-bali"
+uv run python run_pipeline.py --url "https://bookretreats.com/s/wellness-retreats/costa-rica" --label "br-wellness-cr"
+```
+
+### Run individual scrapers (standalone)
+
+```bash
+# Retreat.guru only
 uv run python scraper.py
 
-# Step 3: Enrich with Google Places
+# BookRetreats only
+uv run python scraper_bookretreats.py
+
+# Google Places enrichment
 uv run python enrich_google.py
 
-# Step 4: Scrape websites for contacts
+# Website contact scraping
 uv run python enrich_website.py
 ```
 
-## Output Fields
+## Output: leads_master.csv
 
-The final `leads_final.csv` contains:
+All leads are appended to a single master file with these fields:
 
 | Field | Description |
 |-------|-------------|
+| **unique_id** | SHA256 hash of organizer name (same across platforms!) |
+| **source_platform** | "retreat.guru" or "bookretreats.com" |
+| **source_label** | Your custom label for this search |
+| **scrape_date** | When this lead was scraped |
 | organizer | Retreat center/venue name |
 | title | Retreat event title |
-| location_city | City, Country |
+| location_city | City, State, Country |
 | detailed_address | Full street address |
 | phone | Phone number (from Google) |
 | email | Email addresses (from website) |
@@ -86,34 +130,41 @@ The final `leads_final.csv` contains:
 | facebook | Facebook page URL |
 | linkedin | LinkedIn page URL |
 | twitter | Twitter/X profile URL |
+| youtube | YouTube channel URL |
+| tiktok | TikTok profile URL |
 | dates | Event dates |
 | price | Starting price |
-| rating | Rating on retreat.guru |
-| event_url | Link to retreat.guru event page |
-| center_url | Link to retreat.guru center page |
+| rating | Rating on platform |
+| event_url | Link to retreat page |
+| center_url | Link to organizer profile |
 | google_maps_url | Link to Google Maps |
+| source_url | The search URL used |
 
-## Configuration
+## Cross-Platform Duplicate Detection
 
-Edit the `SEARCH_URL` in `scraper.py` to change the search parameters:
+The `unique_id` is based on the **organizer name only**, which means:
 
-```python
-SEARCH_URL = "https://retreat.guru/search?topic=yoga&experiences_type=yoga&country=mexico"
-```
+- Same organizer with multiple retreats → same hash
+- Same organizer on different platforms → same hash
+- You can easily identify organizers that appear on both retreat.guru AND bookretreats.com
 
-You can modify:
-- `topic` - Type of retreat (yoga, meditation, wellness, etc.)
-- `country` - Country to search in
-- Add other filters from retreat.guru's URL parameters
+Example: If "Casa Violeta" is on both platforms, they'll have the same `unique_id`, making it easy to:
+1. Avoid contacting the same organizer twice
+2. Compare their listings across platforms
+3. Identify which organizers have broader reach
 
 ## Cost Estimate
 
 - Google Places API: ~$32 per 1,000 requests
-- For 64 leads with 44 unique centers: ~$1.50
+- For 100 leads with 60 unique organizers: ~$2-3
 
 ## Files
 
-- `scraper.py` - Scrapes retreat.guru search results and center pages
-- `enrich_google.py` - Looks up businesses via Google Places API
-- `enrich_website.py` - Scrapes websites for email and social media
-- `run_pipeline.py` - Runs the complete pipeline
+| File | Description |
+|------|-------------|
+| `run_pipeline.py` | Main entry point - runs full pipeline with CLI args |
+| `scraper.py` | retreat.guru scraper |
+| `scraper_bookretreats.py` | bookretreats.com scraper |
+| `enrich_google.py` | Google Places API enrichment |
+| `enrich_website.py` | Website scraping for email/social |
+| `DOCUMENTATION.md` | Detailed technical documentation |
