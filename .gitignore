@@ -1,0 +1,18 @@
+# Environment
+.env
+.venv/
+__pycache__/
+
+# Data files (contain scraped leads - don't commit to public repo)
+*.csv
+!example_output.csv
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# UV lock file (optional - can be committed for reproducibility)
+# uv.lock

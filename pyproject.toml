@@ -1,0 +1,15 @@
+[project]
+name = "retreat-scraper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "google-maps-places>=0.5.0",
+    "httpx>=0.28.1",
+    "lxml>=6.0.2",
+    "pandas>=2.3.3",
+    "playwright>=1.57.0",
+    "python-dotenv>=1.2.1",
+]
