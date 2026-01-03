@@ -249,7 +249,18 @@ async def enrich_leads_with_website_data(input_file: str, output_file: str):
 
     if len(websites_to_scrape) == 0:
         print("\n⚠ No websites found to scrape!")
-        print("Run enrich_google.py first to find websites via Google Places API.")
+        print("Continuing with empty contact columns...")
+
+        # Add empty contact columns and save
+        df["email"] = ""
+        df["instagram"] = ""
+        df["facebook"] = ""
+        df["linkedin"] = ""
+        df["twitter"] = ""
+        df["youtube"] = ""
+        df["tiktok"] = ""
+        df.to_csv(output_file, index=False, encoding="utf-8")
+        print(f"\nSaved to {output_file} (no contact enrichment)")
         return
 
     # Initialize scraper

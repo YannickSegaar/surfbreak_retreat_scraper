@@ -196,7 +196,7 @@ class BookRetreatsScraper:
         return list(urls)
 
     async def _scrape_retreat_page(self, url: str) -> RetreatLead:
-        """Scrape a single retreat page for detailed info using JSON-LD data."""
+        """Scrape a single retreat page for detailed info from HTML."""
         try:
             await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await self.page.wait_for_timeout(2000)
@@ -210,24 +210,86 @@ class BookRetreatsScraper:
         lead = RetreatLead()
         lead.event_url = url
 
-        # Extract JSON-LD structured data (primary source)
-        json_ld_data = self._extract_json_ld(soup)
+        # === TITLE ===
+        h1 = soup.select_one("h1")
+        if h1:
+            lead.title = h1.get_text(strip=True)
 
-        if json_ld_data:
-            lead = self._parse_json_ld(json_ld_data, lead)
-
-        # Fallback: extract from HTML if JSON-LD missing key fields
-        if not lead.title:
-            h1 = soup.select_one("h1")
-            if h1:
-                lead.title = h1.get_text(strip=True)
-
-        # Try to find organizer profile URL
-        org_link = soup.select_one("a[href*='/organizers/']")
+        # === ORGANIZER NAME AND URL ===
+        # The organizer link is the anchor tag with href="/organizers/o/..."
+        org_link = soup.select_one("a[href*='/organizers/o/']")
         if org_link:
+            lead.organizer = org_link.get_text(strip=True)
             lead.center_url = urljoin(BASE_URL, org_link.get("href", ""))
 
-        # Build search query for Google Maps
+        # === LOCATION ===
+        # Look for location text patterns in the page
+        # Usually appears near the title or in a location section
+        location_patterns = [
+            soup.select_one("[class*='location']"),
+            soup.select_one("[class*='Location']"),
+            soup.select_one("[data-testid*='location']"),
+        ]
+        for loc_elem in location_patterns:
+            if loc_elem:
+                lead.location_city = loc_elem.get_text(strip=True)
+                break
+
+        # Fallback: extract location from title (often includes "in Location, Country")
+        if not lead.location_city and lead.title:
+            if " in " in lead.title:
+                # e.g., "5 Day Retreat in Tulum, Mexico" -> "Tulum, Mexico"
+                location_part = lead.title.split(" in ")[-1]
+                if "," in location_part:
+                    lead.location_city = location_part
+
+        # === PRICE ===
+        # Look for price elements (usually contains "US$" or "$")
+        price_elem = soup.find(string=re.compile(r'US?\$[\d,]+'))
+        if price_elem:
+            # Extract just the price portion
+            price_match = re.search(r'US?\$[\d,]+', price_elem)
+            if price_match:
+                lead.price = price_match.group(0)
+
+        # === RATING ===
+        # Look for rating stars or review count
+        rating_elem = soup.select_one("[class*='rating']")
+        if rating_elem:
+            rating_text = rating_elem.get_text(strip=True)
+            # Extract numeric rating
+            rating_match = re.search(r'(\d+\.?\d*)\s*(?:/\s*5)?', rating_text)
+            if rating_match:
+                lead.rating = rating_match.group(1)
+
+        # Also look for review count
+        review_elem = soup.find(string=re.compile(r'\d+\s*reviews?'))
+        if review_elem:
+            review_match = re.search(r'(\d+)\s*reviews?', review_elem)
+            if review_match:
+                if lead.rating:
+                    lead.rating += f" ({review_match.group(1)} reviews)"
+                else:
+                    lead.rating = f"({review_match.group(1)} reviews)"
+
+        # === DETAILED ADDRESS ===
+        # Look for address-like content
+        address_selectors = [
+            "[class*='address']",
+            "[class*='Address']",
+            "[itemprop='address']",
+        ]
+        for selector in address_selectors:
+            addr_elem = soup.select_one(selector)
+            if addr_elem:
+                lead.detailed_address = addr_elem.get_text(strip=True)
+                break
+
+        # If no specific address, use location_city as detailed_address
+        if not lead.detailed_address and lead.location_city:
+            lead.detailed_address = lead.location_city
+
+        # === BUILD SEARCH QUERY ===
         if lead.organizer and lead.detailed_address:
             lead.search_query = f"{lead.organizer} {lead.detailed_address}"
         elif lead.organizer and lead.location_city:
