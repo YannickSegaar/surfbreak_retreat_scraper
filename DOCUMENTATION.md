@@ -655,59 +655,186 @@ places.location  # For lat/lng and distance calculations
 
 #### `leads_master.csv` - Master Database
 
-All leads from all scrapes, with columns:
+All leads from all scrapes, with **40 columns**:
 
+**Identification & Source (6 columns):**
 | Column | Description | Example |
 |--------|-------------|---------|
-| **unique_id** | SHA256 hash of organizer name | `a1b2c3d4e5f6` |
-| **source_platform** | Which site it came from | `retreat.guru` |
-| **source_label** | User-defined batch label | `rg-yoga-mexico` |
-| **scrape_date** | When scraped | `2024-12-26 17:43:22` |
-| organizer | Center/facilitator name | Yandara Yoga Institute |
-| title | Retreat name | 28-day 300hr YTT |
-| location_city | Location | Todos Santos, Mexico |
-| detailed_address | Full address | Carretera 19, KM 74... |
-| dates | Event dates | March 29 - April 26, 2026 |
-| price | Price | $4,000.00 |
-| rating | Platform rating | 5 (1 review) |
-| phone | Phone number | +52 612 123 4567 |
-| website | Website URL | https://yandara.com |
-| email | Email(s) | info@yandara.com |
-| instagram | Instagram URL | https://instagram.com/yandarayoga |
-| facebook | Facebook URL | https://facebook.com/yandarayoga |
-| linkedin | LinkedIn URL | (if found) |
-| twitter | Twitter URL | (if found) |
-| youtube | YouTube URL | (if found) |
-| tiktok | TikTok URL | (if found) |
-| event_url | Link to listing | https://retreat.guru/events/... |
-| center_url | Link to organizer | https://retreat.guru/centers/... |
-| google_maps_url | Google Maps link | https://maps.google.com/?cid=... |
-| **latitude** | GPS latitude | 23.4567 |
-| **longitude** | GPS longitude | -110.2345 |
-| **distance_to_surfbreak_miles** | Distance to Surfbreak PXM | 234.5 |
-| source_url | Search URL used | https://retreat.guru/search?... |
-| **ai_classification** | AI classification | FACILITATOR |
-| **ai_confidence** | AI confidence (0-100) | 92 |
-| **profile_summary** | AI-generated profile | "Sarah Chen is a yoga teacher..." |
-| **website_analysis** | AI website insights | "Personal brand site, no venue..." |
-| **outreach_talking_points** | AI talking points | "Reference her Ocean Flow retreat..." |
-| **fit_reasoning** | AI fit analysis | "Excellent fit: traveling facilitator..." |
-| **ai_red_flags** | AI concerns | "None identified" |
-| **ai_green_flags** | AI positive signals | "Traveling facilitator; Active social..." |
+| `unique_id` | SHA256 hash of organizer name (12 chars) | `a1b2c3d4e5f6` |
+| `source_platform` | Which site it came from | `retreat.guru` |
+| `source_label` | User-defined batch label | `rg-yoga-mexico` |
+| `scrape_date` | When scraped | `2024-12-26 17:43:22` |
+| `source_url` | Search URL used | `https://retreat.guru/search?...` |
+| `search_query` | Query sent to Google Places | `Yandara Yoga Todos Santos Mexico` |
+
+**Organizer & Retreat Info (8 columns):**
+| Column | Description | Example |
+|--------|-------------|---------|
+| `organizer` | Center/facilitator name | `Yandara Yoga Institute` |
+| `title` | Retreat name | `28-day 300hr YTT` |
+| `location_city` | Location | `Todos Santos, Mexico` |
+| `detailed_address` | Full address | `Carretera 19, KM 74...` |
+| `dates` | Event dates | `March 29 - April 26, 2026` |
+| `price` | Price | `$4,000.00` |
+| `rating` | Platform rating | `5 (1 review)` |
+| `event_url` | Link to listing | `https://retreat.guru/events/...` |
+| `center_url` | Link to organizer | `https://retreat.guru/centers/...` |
+
+**Contact Info - Direct (7 columns):**
+| Column | Description | Example |
+|--------|-------------|---------|
+| `phone` | Phone number | `+52 612 123 4567` |
+| `email` | Email(s) found | `info@yandara.com` |
+| `website` | Website URL | `https://yandara.com` |
+| `instagram` | Instagram URL | `https://instagram.com/yandarayoga` |
+| `facebook` | Facebook URL | `https://facebook.com/yandarayoga` |
+| `linkedin` | LinkedIn URL | (if found) |
+| `twitter` | Twitter URL | (if found) |
+| `youtube` | YouTube URL | (if found) |
+| `tiktok` | TikTok URL | (if found) |
+| `host_email_scraped` | Email scraped from website | `contact@yandara.com` |
+
+**Google Places Data (6 columns):**
+| Column | Description | Example |
+|--------|-------------|---------|
+| `google_business_name` | Verified name | `Yandara Yoga Institute` |
+| `google_address` | Verified address | `Todos Santos, BCS, Mexico` |
+| `google_rating` | Google rating | `4.8` |
+| `google_reviews` | Review count | `127` |
+| `google_maps_url` | Google Maps link | `https://maps.google.com/?cid=...` |
+
+**Location Data (3 columns):**
+| Column | Description | Example |
+|--------|-------------|---------|
+| `latitude` | GPS latitude | `23.4567` |
+| `longitude` | GPS longitude | `-110.2345` |
+
+**AI Enrichment (8 columns):**
+| Column | Description | Example |
+|--------|-------------|---------|
+| `ai_classification` | AI classification | `FACILITATOR` / `VENUE_OWNER` / `UNCLEAR` |
+| `ai_confidence` | Confidence (0-100) | `92` |
+| `profile_summary` | Who they are (2-3 sentences) | `"Sarah Chen is a yoga teacher based in SD..."` |
+| `website_analysis` | Key website insights | `"Personal brand site, no venue ownership..."` |
+| `outreach_talking_points` | 3 conversation starters (pipe-separated) | `"Reference Ocean Flow | Ask about 2025 | Offer tour"` |
+| `fit_reasoning` | Why good/bad fit for Surfbreak | `"Excellent fit: traveling facilitator..."` |
+| `ai_red_flags` | Concerns to watch | `"None identified"` |
+| `ai_green_flags` | Positive signals | `"Traveling facilitator; Active social..."` |
 
 #### `leads_analyzed.csv` - Prioritized Output
 
-All columns from master, plus:
+All 40 columns from master, **plus 7 analysis columns (47 total)**:
 
+**Analysis & Scoring (7 columns):**
 | Column | Description | Example |
 |--------|-------------|---------|
-| **priority_score** | 0-100 score | `85` |
-| **lead_type** | Classification | `TRAVELING_FACILITATOR` |
-| retreat_count | Total retreats | `7` |
-| unique_locations | Different venues | `3` |
-| is_traveling_facilitator | Boolean | `True` |
-| is_multi_platform | Boolean | `True` |
-| name_classification | Name analysis | `likely_facilitator` |
+| `priority_score` | 0-100 priority score | `85` |
+| `lead_type` | Final classification | `TRAVELING_FACILITATOR` / `FACILITATOR` / `VENUE_OWNER` / `UNKNOWN` |
+| `retreat_count` | Total retreats by organizer | `7` |
+| `unique_locations` | Different venue locations | `3` |
+| `is_traveling_facilitator` | Hosts at multiple locations | `True` / `False` |
+| `is_multi_platform` | On both retreat.guru and bookretreats | `True` / `False` |
+| `name_classification` | Heuristic name analysis | `likely_facilitator` / `likely_venue` / `unclear` |
+
+---
+
+## Airtable Integration
+
+### Importing to Airtable
+
+The `leads_analyzed.csv` file can be imported directly into Airtable. Use the prompt below with Airtable's AI assistant to set up the table structure before importing.
+
+### Airtable Setup Prompt
+
+Copy and paste this entire prompt into Airtable's AI assistant to create the table:
+
+```
+Create a table called "Surfbreak Leads" for tracking retreat facilitator prospects. This is a sales lead database for a retreat venue in Puerto Escondido, Mexico.
+
+Create the following fields in this exact order:
+
+=== IDENTIFICATION & SOURCE ===
+1. unique_id - Single line text - Primary identifier (SHA256 hash of organizer name, 12 characters). Used to identify same organizer across platforms.
+2. source_platform - Single select with options: "retreat.guru", "bookretreats.com" - Which website the lead was scraped from.
+3. source_label - Single line text - User-defined batch label for this scrape run (e.g., "rg-yoga-mexico").
+4. scrape_date - Date with time - When this lead was scraped.
+5. source_url - URL - The search URL that was scraped.
+6. search_query - Single line text - The query sent to Google Places API to find contact info.
+
+=== ORGANIZER & RETREAT INFO ===
+7. organizer - Single line text - Name of the retreat organizer, yoga teacher, or wellness center. This is the primary name field.
+8. title - Single line text - Name of the specific retreat being offered.
+9. location_city - Single line text - City and country where the retreat takes place.
+10. detailed_address - Long text - Full street address of the retreat location.
+11. dates - Single line text - When the retreat takes place.
+12. price - Single line text - Price of the retreat.
+13. rating - Single line text - Rating on the source platform.
+14. event_url - URL - Direct link to the retreat listing page.
+15. center_url - URL - Link to the organizer's profile page on the source platform.
+
+=== CONTACT INFORMATION ===
+16. phone - Phone number - Phone number from Google Places API.
+17. email - Email - Primary email address found.
+18. website - URL - Organizer's main website.
+19. instagram - URL - Instagram profile link.
+20. facebook - URL - Facebook page link.
+21. linkedin - URL - LinkedIn profile link.
+22. twitter - URL - Twitter/X profile link.
+23. youtube - URL - YouTube channel link.
+24. tiktok - URL - TikTok profile link.
+25. host_email_scraped - Email - Additional email scraped from their website.
+
+=== GOOGLE PLACES DATA ===
+26. google_business_name - Single line text - Verified business name from Google.
+27. google_address - Single line text - Verified address from Google.
+28. google_rating - Number (decimal, 1 decimal place) - Google Maps rating (0-5 scale).
+29. google_reviews - Number (integer) - Number of Google reviews.
+30. google_maps_url - URL - Direct link to Google Maps listing.
+
+=== LOCATION DATA ===
+31. latitude - Number (decimal, 6 decimal places) - GPS latitude coordinate.
+32. longitude - Number (decimal, 6 decimal places) - GPS longitude coordinate.
+
+=== AI ANALYSIS ===
+33. ai_classification - Single select with options: "FACILITATOR", "VENUE_OWNER", "UNCLEAR" - AI-determined classification. FACILITATOR = good prospect (rents venues). VENUE_OWNER = competitor (owns their venue). UNCLEAR = needs manual review.
+34. ai_confidence - Number (integer, 0-100) - AI confidence level in the classification. Higher = more certain.
+35. profile_summary - Long text - AI-generated 2-3 sentence description of who this organizer is and what they do.
+36. website_analysis - Long text - AI-generated insights from analyzing their website content.
+37. outreach_talking_points - Long text - AI-generated personalized conversation starters for sales outreach. Contains 3 talking points separated by " | ".
+38. fit_reasoning - Long text - AI explanation of why this lead is or isn't a good fit for Surfbreak venue.
+39. ai_red_flags - Long text - AI-identified concerns or warning signs about this lead.
+40. ai_green_flags - Long text - AI-identified positive signals about this lead.
+
+=== ANALYSIS & SCORING ===
+41. priority_score - Number (integer, 0-100) - Overall priority score. Higher = better prospect. 70+ = contact immediately, 50-69 = worth reaching out, <50 = likely competitor.
+42. lead_type - Single select with options: "TRAVELING_FACILITATOR", "FACILITATOR", "VENUE_OWNER", "UNKNOWN" - Final lead classification. TRAVELING_FACILITATOR is the best prospect type.
+43. retreat_count - Number (integer) - How many retreats this organizer has listed.
+44. unique_locations - Number (integer) - How many different locations this organizer hosts retreats at. More locations = traveling facilitator.
+45. is_traveling_facilitator - Checkbox - True if organizer hosts at 2+ different locations.
+46. is_multi_platform - Checkbox - True if organizer appears on both retreat.guru AND bookretreats.com.
+47. name_classification - Single select with options: "likely_facilitator", "likely_venue", "unclear" - Heuristic classification based on organizer name patterns.
+
+=== VIEWS TO CREATE ===
+
+Create these views:
+1. "All Leads" - Grid view showing all records, sorted by priority_score descending.
+2. "High Priority (70+)" - Grid view filtered to priority_score >= 70, sorted by priority_score descending. These are the best prospects to contact first.
+3. "Traveling Facilitators" - Grid view filtered to is_traveling_facilitator = true. These are the BEST prospects - they already rent venues.
+4. "Facilitators" - Grid view filtered to lead_type = "FACILITATOR" or lead_type = "TRAVELING_FACILITATOR".
+5. "Venue Owners (Skip)" - Grid view filtered to lead_type = "VENUE_OWNER". These are competitors, not prospects.
+6. "Needs Review" - Grid view filtered to ai_classification = "UNCLEAR" or lead_type = "UNKNOWN".
+7. "By Platform" - Grid view grouped by source_platform.
+
+=== FIELD GROUPING (Optional) ===
+Group fields into sections:
+- "Identification" - unique_id through search_query
+- "Organizer Info" - organizer through center_url
+- "Contact" - phone through host_email_scraped
+- "Google Data" - google_business_name through google_maps_url
+- "Location" - latitude, longitude
+- "AI Analysis" - ai_classification through ai_green_flags
+- "Scoring" - priority_score through name_classification
+```
 
 ---
 
