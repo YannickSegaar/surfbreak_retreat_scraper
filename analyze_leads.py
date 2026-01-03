@@ -41,14 +41,28 @@ def analyze_leads():
     print("=" * 70)
     print(f"\nLoaded {len(df)} leads from {INPUT_FILE}")
 
+    # Check if AI enrichment data is available
+    has_ai_data = "ai_classification" in df.columns and df["ai_classification"].notna().any()
+    if has_ai_data:
+        print("✓ AI enrichment data detected - using AI classification for scoring")
+    else:
+        print("ℹ No AI enrichment data - using heuristic classification only")
+
     # === ANALYSIS 1: Count retreats per organizer ===
     # Organizers with multiple retreats are more active/established
-    organizer_counts = df.groupby("unique_id").agg({
+    agg_dict = {
         "organizer": "first",
         "title": "count",
         "location_city": lambda x: x.nunique(),  # Unique locations
         "source_platform": lambda x: list(x.unique()),  # Which platforms
-    }).rename(columns={
+    }
+
+    # Include AI data if available
+    if has_ai_data:
+        agg_dict["ai_classification"] = "first"
+        agg_dict["ai_confidence"] = "first"
+
+    organizer_counts = df.groupby("unique_id").agg(agg_dict).rename(columns={
         "title": "retreat_count",
         "location_city": "unique_locations",
         "source_platform": "platforms"
@@ -116,11 +130,25 @@ def analyze_leads():
         elif row["retreat_count"] >= 2:
             score += 5
 
-        # Name classification
-        if row["name_classification"] == "likely_facilitator":
-            score += 15
-        elif row["name_classification"] == "likely_venue":
-            score -= 20  # Likely a competitor, not a prospect
+        # AI classification (if available) - takes precedence over name heuristics
+        if has_ai_data and pd.notna(row.get("ai_classification")):
+            ai_class = row["ai_classification"]
+            ai_conf = row.get("ai_confidence", 50) or 50
+
+            # Scale AI impact by confidence (0-100)
+            confidence_multiplier = ai_conf / 100
+
+            if ai_class == "FACILITATOR":
+                score += int(25 * confidence_multiplier)  # Up to +25
+            elif ai_class == "VENUE_OWNER":
+                score -= int(30 * confidence_multiplier)  # Up to -30
+            # UNCLEAR adds no points
+        else:
+            # Fall back to name classification if no AI data
+            if row["name_classification"] == "likely_facilitator":
+                score += 15
+            elif row["name_classification"] == "likely_venue":
+                score -= 20  # Likely a competitor, not a prospect
 
         return min(100, max(0, score))  # Clamp to 0-100
 
@@ -128,6 +156,22 @@ def analyze_leads():
 
     # === FINAL CLASSIFICATION ===
     def get_lead_type(row):
+        # AI classification takes precedence (if available and confident)
+        if has_ai_data and pd.notna(row.get("ai_classification")):
+            ai_class = row["ai_classification"]
+            ai_conf = row.get("ai_confidence", 0) or 0
+
+            # Use AI classification if confidence >= 60%
+            if ai_conf >= 60:
+                if row["is_traveling_facilitator"]:
+                    return "TRAVELING_FACILITATOR"  # Even better signal
+                elif ai_class == "FACILITATOR":
+                    return "FACILITATOR"
+                elif ai_class == "VENUE_OWNER":
+                    return "VENUE_OWNER"
+                # UNCLEAR falls through to heuristics
+
+        # Fall back to heuristic classification
         if row["is_traveling_facilitator"]:
             return "TRAVELING_FACILITATOR"
         elif row["name_classification"] == "likely_venue":
@@ -163,6 +207,22 @@ def analyze_leads():
 
     total_organizers = len(organizer_counts)
     print(f"\nTotal unique organizers: {total_organizers}")
+
+    # AI classification stats (if available)
+    if has_ai_data:
+        ai_classified = organizer_counts["ai_classification"].notna().sum()
+        ai_facilitators = (organizer_counts["ai_classification"] == "FACILITATOR").sum()
+        ai_venue_owners = (organizer_counts["ai_classification"] == "VENUE_OWNER").sum()
+        ai_unclear = (organizer_counts["ai_classification"] == "UNCLEAR").sum()
+        avg_confidence = organizer_counts["ai_confidence"].mean()
+
+        print(f"\n--- AI Classification Summary ---")
+        print(f"  Leads analyzed by AI: {ai_classified}/{total_organizers}")
+        print(f"  AI Classifications:")
+        print(f"    FACILITATOR:  {ai_facilitators} ({ai_facilitators/total_organizers*100:.1f}%)")
+        print(f"    VENUE_OWNER:  {ai_venue_owners} ({ai_venue_owners/total_organizers*100:.1f}%)")
+        print(f"    UNCLEAR:      {ai_unclear} ({ai_unclear/total_organizers*100:.1f}%)")
+        print(f"  Average AI confidence: {avg_confidence:.1f}%")
 
     # Lead type breakdown
     print("\n--- Lead Type Breakdown ---")

@@ -263,6 +263,26 @@ async def run_pipeline(search_url: str, source_label: str):
         if Path(temp_file).exists():
             Path(temp_file).unlink()
 
+    # Step 6: AI-Powered Lead Analysis
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    if openai_key:
+        print("\n" + "=" * 70)
+        print("STEP 6: AI-Powered Lead Analysis")
+        print("=" * 70)
+
+        from enrich_ai import enrich_leads_with_ai
+        await enrich_leads_with_ai(MASTER_FILE, "leads_ai_enriched.csv")
+
+        # Replace master with AI-enriched version
+        if Path("leads_ai_enriched.csv").exists():
+            Path("leads_ai_enriched.csv").replace(MASTER_FILE)
+            print(f"✓ AI enrichment applied to {MASTER_FILE}")
+    else:
+        print("\n" + "=" * 70)
+        print("STEP 6: AI Analysis SKIPPED (no OPENAI_API_KEY)")
+        print("=" * 70)
+        print("Add OPENAI_API_KEY to .env for AI-powered lead profiling")
+
     # Final summary
     print("\n" + "=" * 70)
     print("PIPELINE COMPLETE!")

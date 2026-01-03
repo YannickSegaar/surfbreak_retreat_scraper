@@ -9,6 +9,7 @@ dependencies = [
     "google-maps-places>=0.5.0",
     "httpx>=0.28.1",
     "lxml>=6.0.2",
+    "openai>=1.0.0",
     "pandas>=2.3.3",
     "playwright>=1.57.0",
     "python-dotenv>=1.2.1",

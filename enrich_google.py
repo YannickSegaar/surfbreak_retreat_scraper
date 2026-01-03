@@ -7,6 +7,8 @@ Enriches leads with contact information from Google Places API:
 - Website URL
 - Google Maps URL
 - Verified business name and address
+- Latitude/Longitude coordinates
+- Distance to Surfbreak PXM (Puerto Escondido)
 
 SETUP:
 1. Get your API key from Google Cloud Console
@@ -22,6 +24,7 @@ import asyncio
 import os
 import re
 from dataclasses import dataclass
+from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 
 import httpx
@@ -48,6 +51,64 @@ REQUEST_DELAY = 0.5  # seconds between requests (be respectful)
 # Google Places API endpoints
 PLACES_TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 
+# =============================================================================
+# SURFBREAK PXM LOCATION (for distance calculations)
+# =============================================================================
+# Address: Los Laureles, Nogales Tamarindos, Brisas de Zicatela,
+#          70934 Puerto Escondido, Oax., Mexico
+# TODO: Update with exact coordinates from Google Maps
+SURFBREAK_LAT = 15.8427193  # Approximate - update with exact coordinates
+SURFBREAK_LNG = -97.04802360000001  # Approximate - update with exact coordinates
+
+
+# =============================================================================
+# HAVERSINE DISTANCE CALCULATION
+# =============================================================================
+
+def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Calculate distance in miles between two points using Haversine formula.
+
+    The Haversine formula calculates the great-circle distance between two points
+    on a sphere given their longitudes and latitudes.
+
+    Args:
+        lat1, lng1: First point coordinates (degrees)
+        lat2, lng2: Second point coordinates (degrees)
+
+    Returns:
+        Distance in miles
+    """
+    R = 3959  # Earth's radius in miles (use 6371 for km)
+
+    # Convert to radians
+    lat1, lng1, lat2, lng2 = map(radians, [lat1, lng1, lat2, lng2])
+
+    # Haversine formula
+    dlat = lat2 - lat1
+    dlng = lng2 - lng1
+
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    return R * c
+
+
+def calculate_distance_to_surfbreak(lat: float, lng: float) -> float | None:
+    """
+    Calculate distance in miles from a location to Surfbreak PXM.
+
+    Args:
+        lat: Latitude of the location
+        lng: Longitude of the location
+
+    Returns:
+        Distance in miles, or None if coordinates are invalid
+    """
+    if not lat or not lng or lat == 0 or lng == 0:
+        return None
+    return round(haversine_distance(lat, lng, SURFBREAK_LAT, SURFBREAK_LNG), 1)
+
 
 # =============================================================================
 # DATA CLASSES
@@ -66,6 +127,8 @@ class PlaceResult:
     rating: float = 0.0
     total_reviews: int = 0
     types: str = ""  # Business categories
+    latitude: float = 0.0
+    longitude: float = 0.0
 
 
 # =============================================================================
@@ -112,6 +175,7 @@ class GooglePlacesClient:
                 "places.rating",
                 "places.userRatingCount",
                 "places.types",
+                "places.location",  # Latitude/Longitude for distance calculations
             ])
         }
 
@@ -144,6 +208,11 @@ class GooglePlacesClient:
             place = places[0]
             self.stats["found"] += 1
 
+            # Extract location coordinates
+            location = place.get("location", {})
+            latitude = location.get("latitude", 0.0)
+            longitude = location.get("longitude", 0.0)
+
             return PlaceResult(
                 found=True,
                 place_id=place.get("id", ""),
@@ -155,6 +224,8 @@ class GooglePlacesClient:
                 rating=place.get("rating", 0.0),
                 total_reviews=place.get("userRatingCount", 0),
                 types=", ".join(place.get("types", [])[:3]),  # First 3 types
+                latitude=latitude,
+                longitude=longitude,
             )
 
         except Exception as e:
@@ -235,6 +306,9 @@ async def enrich_leads_with_google(input_file: str, output_file: str):
     df["google_maps_url"] = ""
     df["google_rating"] = ""
     df["google_reviews"] = ""
+    df["latitude"] = ""
+    df["longitude"] = ""
+    df["distance_to_surfbreak_miles"] = ""
 
     for idx, row in df.iterrows():
         query = row.get("search_query", "")
@@ -248,6 +322,13 @@ async def enrich_leads_with_google(input_file: str, output_file: str):
                 df.at[idx, "google_maps_url"] = result.google_maps_url
                 df.at[idx, "google_rating"] = result.rating if result.rating else ""
                 df.at[idx, "google_reviews"] = result.total_reviews if result.total_reviews else ""
+                # Add coordinates and distance
+                if result.latitude and result.longitude:
+                    df.at[idx, "latitude"] = result.latitude
+                    df.at[idx, "longitude"] = result.longitude
+                    distance = calculate_distance_to_surfbreak(result.latitude, result.longitude)
+                    if distance is not None:
+                        df.at[idx, "distance_to_surfbreak_miles"] = distance
 
     # Save output
     df.to_csv(output_file, index=False, encoding="utf-8")
@@ -265,9 +346,13 @@ async def enrich_leads_with_google(input_file: str, output_file: str):
     # Count enriched fields
     with_phone = df["phone"].notna() & (df["phone"] != "")
     with_website = df["website"].notna() & (df["website"] != "")
+    with_coords = df["latitude"].notna() & (df["latitude"] != "")
+    with_distance = df["distance_to_surfbreak_miles"].notna() & (df["distance_to_surfbreak_miles"] != "")
 
-    print(f"   Leads with phone:   {with_phone.sum()}")
-    print(f"   Leads with website: {with_website.sum()}")
+    print(f"   Leads with phone:      {with_phone.sum()}")
+    print(f"   Leads with website:    {with_website.sum()}")
+    print(f"   Leads with coordinates: {with_coords.sum()}")
+    print(f"   Leads with distance:   {with_distance.sum()}")
     print("=" * 70)
 
 
