@@ -1390,5 +1390,45 @@
       ],
       "green_flags": []
     }
+  },
+  "dbf8911751b0": {
+    "cached_at": "2026-01-03T21:54:08.564680",
+    "analysis": {
+      "classification": "VENUE_OWNER",
+      "confidence": 95,
+      "profile_summary": "Paulina Zamudio appears to be associated with Garrafon Park, a specific retreat venue located in Isla Mujeres, Mexico. The retreat she offers, 'The Isla Reset Experience', is hosted at this single location, indicating that she is likely a venue owner rather than a facilitator who rents different venues.",
+      "website_analysis": "The website contains a /venue page and an /accommodations page, which are strong indicators of a venue owner. Additionally, the content focuses heavily on the offerings and amenities of Garrafon Park, suggesting a focus on property management rather than facilitating retreats at multiple locations.",
+      "outreach_talking_points": [
+        "I noticed you are hosting retreats at Garrafon Park, which offers beautiful natural surroundings.",
+        "I saw that you have a strong Google rating and many reviews, indicating a positive experience for your guests.",
+        "At Surfbreak Mexico Retreats, we provide a stunning venue with a focus on wellness and relaxation, perfect for facilitators looking to expand their offerings."
+      ],
+      "fit_reasoning": "Paulina is not a good fit for our venue rental as she appears to own and operate her own retreat venue, which makes her a competitor rather than a potential client.",
+      "red_flags": [
+        "Strong indicators that she owns a specific property, making her a competitor.",
+        "Focus on a single location for her retreats."
+      ],
+      "green_flags": []
+    }
+  },
+  "f8d640ce4eb3": {
+    "cached_at": "2026-01-03T21:54:28.231956",
+    "analysis": {
+      "classification": "VENUE_OWNER",
+      "confidence": 95,
+      "profile_summary": "Natural Pathways appears to be associated with Grutas Tolantongo, a specific retreat venue in Zacatecas, Mexico. They seem to focus on hosting retreats at this singular location, indicating they may own or operate this venue rather than renting it out.",
+      "website_analysis": "The presence of a /venue and /accommodations page strongly indicates that they are a venue owner. Their website content primarily focuses on the specific services and attractions of Grutas Tolantongo, which aligns with the characteristics of a venue owner rather than a facilitator.",
+      "outreach_talking_points": [
+        "I noticed you host retreats at Grutas Tolantongo, which seems like a beautiful location for gatherings.",
+        "Your retreat 'Shed + Rise' caught my attention; it sounds like a transformative experience.",
+        "At Surfbreak Mexico Retreats, we offer a stunning venue that could complement your unique retreat offerings."
+      ],
+      "fit_reasoning": "They are not a good fit for our venue rental as they appear to own and operate their own retreat property, making them a competitor rather than a potential client.",
+      "red_flags": [
+        "Strong indication of being a venue owner with a dedicated property.",
+        "Focus on specific accommodations and services rather than on facilitating retreats at multiple locations."
+      ],
+      "green_flags": []
+    }
   }
 }

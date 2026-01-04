@@ -14,23 +14,20 @@ The source is auto-detected from the URL.
 
 USAGE:
 ------
-# Retreat.guru:
+# With auto-generated label (NEW! - label is optional):
+uv run python run_pipeline.py --url "https://retreat.guru/search?topic=yoga&country=mexico"
+
+# With custom label:
 uv run python run_pipeline.py --url "https://retreat.guru/search?topic=yoga&country=mexico" --label "rg-yoga-mexico"
 
 # BookRetreats.com:
-uv run python run_pipeline.py --url "https://bookretreats.com/s/yoga-retreats/mexico" --label "br-yoga-mexico"
+uv run python run_pipeline.py --url "https://bookretreats.com/s/yoga-retreats/mexico"
 
-# All leads are appended to leads_master.csv with:
-# - unique_id: SHA256 hash based on organizer name (identifies same organizer across sources)
-# - source_label: Your custom label for this search
-# - source_platform: "retreat.guru" or "bookretreats.com"
-# - source_url: The full search URL
-# - scrape_date: When this lead was scraped
-
-SETUP:
-------
-Create a .env file with your Google API key:
-GOOGLE_PLACES_API_KEY=your-api-key-here
+FEATURES:
+---------
+- Auto-labeling: Labels are automatically generated from URL parameters
+- Deduplication: Already-scraped retreats (by event_url) are skipped
+- Scrape description: Rich text describing what filters were used
 
 OUTPUT:
 -------
@@ -97,7 +94,31 @@ def generate_unique_id(organizer: str) -> str:
     return hash_object.hexdigest()[:12]
 
 
-def append_to_master(new_leads_file: str, source_url: str, source_label: str, source_platform: str) -> int:
+def get_existing_event_urls() -> set[str]:
+    """
+    Load existing event URLs from master CSV for deduplication.
+
+    Returns a set of URLs that have already been scraped.
+    """
+    if not Path(MASTER_FILE).exists():
+        return set()
+
+    try:
+        df = pd.read_csv(MASTER_FILE)
+        if "event_url" not in df.columns:
+            return set()
+        return set(df["event_url"].dropna().tolist())
+    except (pd.errors.EmptyDataError, Exception):
+        return set()
+
+
+def append_to_master(
+    new_leads_file: str,
+    source_url: str,
+    source_label: str,
+    source_platform: str,
+    scrape_description: str = ""
+) -> int:
     """
     Append new leads to the master file with source tracking.
 
@@ -117,6 +138,7 @@ def append_to_master(new_leads_file: str, source_url: str, source_label: str, so
     new_df["source_label"] = source_label
     new_df["source_platform"] = source_platform
     new_df["scrape_date"] = scrape_date
+    new_df["scrape_description"] = scrape_description
 
     # Generate unique IDs (based on organizer name only)
     new_df["unique_id"] = new_df.apply(
@@ -126,8 +148,8 @@ def append_to_master(new_leads_file: str, source_url: str, source_label: str, so
 
     # Reorder columns to put unique_id and source info first
     priority_cols = ["unique_id", "source_platform", "source_label", "scrape_date", "organizer", "title"]
-    other_cols = [c for c in new_df.columns if c not in priority_cols and c != "source_url"]
-    new_df = new_df[priority_cols + other_cols + ["source_url"]]
+    other_cols = [c for c in new_df.columns if c not in priority_cols and c not in ["source_url", "scrape_description"]]
+    new_df = new_df[priority_cols + other_cols + ["scrape_description", "source_url"]]
 
     # Check if master file exists and has data
     master_exists = False
@@ -152,7 +174,20 @@ def append_to_master(new_leads_file: str, source_url: str, source_label: str, so
             print(f"  Note: {duplicate_count} organizers already exist in master database")
             print(f"        (Same organizer may appear on multiple platforms)")
 
-        # Append (keeping duplicates as requested)
+        # Ensure columns match (add missing columns to master)
+        for col in new_df.columns:
+            if col not in master_df.columns:
+                master_df[col] = ""
+
+        # Ensure columns match (add missing columns to new_df)
+        for col in master_df.columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+
+        # Reorder new_df to match master_df columns
+        new_df = new_df[master_df.columns]
+
+        # Append
         combined_df = pd.concat([master_df, new_df], ignore_index=True)
     else:
         combined_df = new_df
@@ -164,7 +199,7 @@ def append_to_master(new_leads_file: str, source_url: str, source_label: str, so
     return len(new_df)
 
 
-async def run_pipeline(search_url: str, source_label: str):
+async def run_pipeline(search_url: str, source_label: str = None):
     """Run the complete enrichment pipeline."""
 
     # Auto-detect source
@@ -174,21 +209,45 @@ async def run_pipeline(search_url: str, source_label: str):
         print(f"ERROR: {e}")
         return
 
+    # Import URL parser for auto-labeling
+    from url_parser import parse_url, generate_label, generate_description
+
+    # Auto-generate label and description if not provided
+    url_data = parse_url(search_url)
+
+    if not source_label:
+        source_label = generate_label(url_data)
+        print(f"Auto-generated label: {source_label}")
+
+    scrape_description = generate_description(url_data)
+
     print("=" * 70)
     print("SURFBREAK RETREAT LEAD ENRICHMENT PIPELINE")
     print("=" * 70)
     print(f"\nSource:       {source_platform}")
-    print(f"Search URL:   {search_url}")
+    print(f"Search URL:   {search_url[:80]}...")
     print(f"Source Label: {source_label}")
+    print(f"Description:  {scrape_description}")
     print(f"Master File:  {MASTER_FILE}")
 
-    # Check for API key (after loading .env)
-    api_key = os.environ.get("GOOGLE_PLACES_API_KEY", "")
-    if api_key:
-        print(f"\n✓ Google API key loaded ({len(api_key)} chars)")
+    # Get existing URLs for deduplication
+    existing_urls = get_existing_event_urls()
+    if existing_urls:
+        print(f"\n✓ Found {len(existing_urls)} existing retreats (will skip duplicates)")
+
+    # Check for API keys (after loading .env)
+    google_api_key = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+
+    if google_api_key:
+        print(f"✓ Google API key loaded ({len(google_api_key)} chars)")
     else:
-        print("\n⚠ WARNING: GOOGLE_PLACES_API_KEY not set!")
-        print("Google Places enrichment will be skipped.")
+        print("⚠ GOOGLE_PLACES_API_KEY not set - Google Places enrichment will be skipped")
+
+    if openai_api_key:
+        print(f"✓ OpenAI API key loaded ({len(openai_api_key)} chars)")
+    else:
+        print("⚠ OPENAI_API_KEY not set - AI enrichment will be skipped")
 
     # Step 1-2: Scrape based on source
     print("\n" + "=" * 70)
@@ -198,8 +257,8 @@ async def run_pipeline(search_url: str, source_label: str):
     if source_platform == "retreat.guru":
         from scraper import RetreatScraper, ENRICH_WITH_CENTER_DATA
 
-        async with RetreatScraper() as scraper:
-            leads = await scraper.scrape_search_page(search_url)
+        async with RetreatScraper(openai_api_key=openai_api_key) as scraper:
+            leads = await scraper.scrape_search_page(search_url, skip_urls=existing_urls)
 
             if ENRICH_WITH_CENTER_DATA and leads:
                 await scraper.enrich_with_center_data(leads)
@@ -210,18 +269,25 @@ async def run_pipeline(search_url: str, source_label: str):
     elif source_platform == "bookretreats.com":
         from scraper_bookretreats import BookRetreatsScraper
 
-        async with BookRetreatsScraper() as scraper:
-            leads = await scraper.scrape_search_page(search_url)
+        async with BookRetreatsScraper(openai_api_key=openai_api_key) as scraper:
+            leads = await scraper.scrape_search_page(search_url, skip_urls=existing_urls)
             scraper.save_to_csv(leads, "leads_enriched.csv")
             scraper.print_summary()
 
     # Check if leads_enriched.csv was created
     if not Path("leads_enriched.csv").exists():
-        print("ERROR: leads_enriched.csv not created!")
+        print("No new leads found (all may have been already scraped).")
+        return
+
+    # Check if there are any leads
+    enriched_df = pd.read_csv("leads_enriched.csv")
+    if len(enriched_df) == 0:
+        print("No new leads to process.")
+        Path("leads_enriched.csv").unlink()
         return
 
     # Step 3: Google Places enrichment
-    if api_key:
+    if google_api_key:
         print("\n" + "=" * 70)
         print("STEP 3: Google Places API Enrichment")
         print("=" * 70)
@@ -240,6 +306,9 @@ async def run_pipeline(search_url: str, source_label: str):
         df["google_maps_url"] = ""
         df["google_rating"] = ""
         df["google_reviews"] = ""
+        df["latitude"] = ""
+        df["longitude"] = ""
+        df["distance_to_surfbreak_miles"] = ""
         df.to_csv("leads_google_enriched.csv", index=False, encoding="utf-8")
         print("Created leads_google_enriched.csv with empty contact columns")
 
@@ -256,7 +325,13 @@ async def run_pipeline(search_url: str, source_label: str):
     print("STEP 5: Appending to Master Database")
     print("=" * 70)
 
-    new_count = append_to_master("leads_batch.csv", search_url, source_label, source_platform)
+    new_count = append_to_master(
+        "leads_batch.csv",
+        search_url,
+        source_label,
+        source_platform,
+        scrape_description
+    )
 
     # Clean up intermediate files
     for temp_file in ["leads_enriched.csv", "leads_google_enriched.csv", "leads_batch.csv"]:
@@ -264,8 +339,7 @@ async def run_pipeline(search_url: str, source_label: str):
             Path(temp_file).unlink()
 
     # Step 6: AI-Powered Lead Analysis
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    if openai_key:
+    if openai_api_key:
         print("\n" + "=" * 70)
         print("STEP 6: AI-Powered Lead Analysis")
         print("=" * 70)
@@ -321,15 +395,22 @@ Supported sources (auto-detected from URL):
   - bookretreats.com
 
 Examples:
-  # Retreat.guru
+  # Auto-generated label (NEW! - label is now optional):
+  %(prog)s --url "https://retreat.guru/search?topic=yoga&country=mexico"
+
+  # With custom label:
   %(prog)s --url "https://retreat.guru/search?topic=yoga&country=mexico" --label "rg-yoga-mexico"
 
-  # BookRetreats.com
-  %(prog)s --url "https://bookretreats.com/s/yoga-retreats/mexico" --label "br-yoga-mexico"
+  # Complex URL with multiple filters:
+  %(prog)s --url "https://retreat.guru/search?topic=yoga&topic=meditation&country=mexico&experiences_type=ayahuasca"
 
-  # More examples
-  %(prog)s --url "https://retreat.guru/search?topic=meditation&country=costa-rica" --label "rg-meditation-cr"
-  %(prog)s --url "https://bookretreats.com/s/meditation-retreats/bali" --label "br-meditation-bali"
+  # BookRetreats.com:
+  %(prog)s --url "https://bookretreats.com/search?scopes[type]=Yoga+Retreats&scopes[location]=Mexico"
+
+Features:
+  - Auto-labeling: Labels are automatically generated from URL parameters
+  - Deduplication: Already-scraped retreats are skipped
+  - Enhanced extraction: Retreat descriptions, group sizes, and guides
         """
     )
 
@@ -341,8 +422,9 @@ Examples:
 
     parser.add_argument(
         "--label", "-l",
-        required=True,
-        help="A short label for this search (e.g., 'br-yoga-mexico', 'rg-meditation-bali')"
+        required=False,
+        default=None,
+        help="Optional: A short label for this search. If not provided, one is auto-generated from the URL."
     )
 
     args = parser.parse_args()

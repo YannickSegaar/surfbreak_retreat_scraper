@@ -6,9 +6,10 @@ Scrapes retreat listings from retreat.guru to build a lead generation database.
 
 PHASE 1: Scrape search results for basic info + center URLs
 PHASE 2: Scrape center pages for detailed address info
+PHASE 3: (Optional) AI extraction for descriptions, group sizes, and guides
 
-PAGE STRUCTURE ANALYSIS (from Playwright MCP):
-----------------------------------------------
+PAGE STRUCTURE ANALYSIS:
+------------------------
 Search Page:
 - Main tile container: article.search-event-tile
 - Title: h2 inside .search-event-tile__content
@@ -23,14 +24,15 @@ Center Page:
 - Detailed address: [data-cy='center-location']
 - Description: .center-description (if exists)
 
-CONTACT INFO STRATEGY:
----------------------
-retreat.guru does NOT expose email, phone, website, or social media.
-We extract detailed addresses so you can search Google Maps/Google Business
-to find the organizer's actual contact information.
+Event Page (for AI extraction):
+- About This Retreat section
+- Your Guides section
+- Group size information
 """
 
 import asyncio
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin
@@ -38,6 +40,7 @@ from urllib.parse import urljoin
 import httpx
 import pandas as pd
 from bs4 import BeautifulSoup
+from openai import OpenAI
 from playwright.async_api import async_playwright
 
 
@@ -57,6 +60,9 @@ OUTPUT_FILE = "leads_enriched.csv"
 
 # Whether to scrape center pages for detailed addresses (slower but more data)
 ENRICH_WITH_CENTER_DATA = True
+
+# Whether to use AI extraction for enhanced data (requires OPENAI_API_KEY)
+USE_AI_EXTRACTION = True
 
 
 # =============================================================================
@@ -83,6 +89,11 @@ class RetreatLead:
     # For Google Maps lookup
     search_query: str = ""        # Pre-formatted search query
 
+    # Enhanced data (from AI extraction)
+    retreat_description: str = ""  # About this retreat
+    group_size: int | None = None  # Max participants
+    guides_json: str = ""          # JSON array of guide info
+
 
 @dataclass
 class ScraperStats:
@@ -90,6 +101,8 @@ class ScraperStats:
     total_events: int = 0
     unique_centers: int = 0
     centers_scraped: int = 0
+    events_scraped: int = 0
+    skipped_events: int = 0
     errors: int = 0
     error_messages: list = field(default_factory=list)
 
@@ -101,13 +114,18 @@ class ScraperStats:
 class RetreatScraper:
     """Scrapes retreat listings from retreat.guru."""
 
-    def __init__(self):
+    def __init__(self, openai_api_key: str = None):
         self.browser = None
         self.page = None
         self.httpx_client = None
         self.stats = ScraperStats()
         self.leads: list[RetreatLead] = []
         self.scraped_centers: dict[str, dict] = {}  # Cache center data
+
+        # AI client for enhanced extraction
+        self.ai_client = None
+        if openai_api_key and USE_AI_EXTRACTION:
+            self.ai_client = OpenAI(api_key=openai_api_key)
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -132,9 +150,13 @@ class RetreatScraper:
         if self.playwright:
             await self.playwright.stop()
 
-    async def scrape_search_page(self, url: str) -> list[RetreatLead]:
+    async def scrape_search_page(self, url: str, skip_urls: set[str] = None) -> list[RetreatLead]:
         """
         Navigate to search results and extract all retreat listings.
+
+        Args:
+            url: Search URL to scrape
+            skip_urls: Set of event URLs to skip (already scraped)
         """
         print(f"Navigating to: {url}")
 
@@ -142,7 +164,7 @@ class RetreatScraper:
         try:
             await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
-            print(f"  ⚠ Initial load warning: {str(e)[:50]}")
+            print(f"  Initial load warning: {str(e)[:50]}")
             # Continue anyway - page might have partially loaded
 
         # Wait for content to render (the page uses JavaScript)
@@ -164,11 +186,22 @@ class RetreatScraper:
         leads = self._extract_leads_from_search(html)
 
         print(f"  Found {len(leads)} retreat listings")
+
+        # Filter out already-scraped URLs
+        if skip_urls:
+            original_count = len(leads)
+            leads = [lead for lead in leads if lead.event_url not in skip_urls]
+            skipped = original_count - len(leads)
+            if skipped > 0:
+                print(f"  Skipping {skipped} already-scraped retreats")
+                self.stats.skipped_events = skipped
+
         self.stats.total_events = len(leads)
 
         # Count unique centers
         unique_centers = set(lead.center_url for lead in leads if lead.center_url)
         self.stats.unique_centers = len(unique_centers)
+        print(f"  New retreats to scrape: {len(leads)}")
         print(f"  Unique centers: {self.stats.unique_centers}")
 
         return leads
@@ -258,7 +291,7 @@ class RetreatScraper:
                 self.stats.centers_scraped += 1
             except Exception as e:
                 error_msg = f"Error scraping {center_url}: {str(e)[:50]}"
-                print(f"    ⚠ {error_msg}")
+                print(f"    {error_msg}")
                 self.stats.errors += 1
                 self.stats.error_messages.append(error_msg)
                 self.scraped_centers[center_url] = {}
@@ -278,6 +311,10 @@ class RetreatScraper:
                     lead.search_query = f"{lead.organizer} {lead.detailed_address}"
                 elif lead.organizer and lead.location_city:
                     lead.search_query = f"{lead.organizer} {lead.location_city}"
+
+        # Optional: AI extraction for event pages
+        if self.ai_client:
+            await self._enrich_with_ai(leads)
 
     async def _scrape_center_page(self, url: str) -> dict:
         """Scrape a single center page for detailed info."""
@@ -312,6 +349,56 @@ class RetreatScraper:
 
         return data
 
+    async def _enrich_with_ai(self, leads: list[RetreatLead]) -> None:
+        """
+        Use AI to extract enhanced data from event pages.
+
+        Extracts:
+        - Retreat description
+        - Group size
+        - Guide information
+        """
+        from extract_with_ai import extract_retreat_details
+
+        print(f"\nAI-enriching {len(leads)} event pages...")
+
+        for i, lead in enumerate(leads):
+            if not lead.event_url:
+                continue
+
+            print(f"  [{i+1}/{len(leads)}] AI extraction: {lead.event_url[:60]}...")
+
+            try:
+                # Navigate to event page
+                await self.page.goto(lead.event_url, wait_until="domcontentloaded", timeout=30000)
+                await self.page.wait_for_timeout(2000)
+
+                html = await self.page.content()
+
+                # Extract with AI
+                details = await extract_retreat_details(html, self.ai_client, "retreat.guru")
+
+                # Apply results
+                if details.get("description"):
+                    lead.retreat_description = details["description"]
+                if details.get("group_size"):
+                    lead.group_size = details["group_size"]
+                if details.get("guides"):
+                    # Add guide IDs
+                    from extract_with_ai import enrich_guides_with_ids
+                    guides = enrich_guides_with_ids(details["guides"])
+                    lead.guides_json = json.dumps(guides)
+
+                self.stats.events_scraped += 1
+
+            except Exception as e:
+                error_msg = f"AI extraction failed for {lead.event_url}: {str(e)[:50]}"
+                print(f"    {error_msg}")
+                self.stats.errors += 1
+
+            # Be respectful
+            await asyncio.sleep(PAGE_DELAY)
+
     def save_to_csv(self, leads: list[RetreatLead], filename: str = OUTPUT_FILE) -> None:
         """Save retreat data to CSV."""
         if not leads:
@@ -320,7 +407,7 @@ class RetreatScraper:
 
         data = []
         for lead in leads:
-            data.append({
+            row = {
                 "organizer": lead.organizer,
                 "title": lead.title,
                 "location_city": lead.location_city,
@@ -331,7 +418,17 @@ class RetreatScraper:
                 "event_url": lead.event_url,
                 "center_url": lead.center_url,
                 "search_query": lead.search_query,
-            })
+            }
+
+            # Add enhanced fields if available
+            if lead.retreat_description:
+                row["retreat_description"] = lead.retreat_description
+            if lead.group_size:
+                row["group_size"] = lead.group_size
+            if lead.guides_json:
+                row["guides_json"] = lead.guides_json
+
+            data.append(row)
 
         df = pd.DataFrame(data)
 
@@ -346,9 +443,12 @@ class RetreatScraper:
         print("\n" + "=" * 60)
         print("SCRAPING SUMMARY")
         print("=" * 60)
-        print(f"   Total retreats:       {self.stats.total_events}")
+        print(f"   Total new retreats:   {self.stats.total_events}")
+        print(f"   Skipped (duplicates): {self.stats.skipped_events}")
         print(f"   Unique centers:       {self.stats.unique_centers}")
         print(f"   Centers scraped:      {self.stats.centers_scraped}")
+        if self.ai_client:
+            print(f"   Events AI-enriched:   {self.stats.events_scraped}")
         print(f"   Errors:               {self.stats.errors}")
         print("-" * 60)
         print("\nNEXT STEPS:")
@@ -370,9 +470,13 @@ async def main():
     print(f"Target URL: {SEARCH_URL}")
     print(f"Output file: {OUTPUT_FILE}")
     print(f"Enrich with center data: {ENRICH_WITH_CENTER_DATA}")
+    print(f"AI extraction: {USE_AI_EXTRACTION}")
     print("=" * 60 + "\n")
 
-    async with RetreatScraper() as scraper:
+    # Get OpenAI key if available
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+
+    async with RetreatScraper(openai_api_key=openai_key) as scraper:
         # Phase 1: Scrape search results
         leads = await scraper.scrape_search_page(SEARCH_URL)
 

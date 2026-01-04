@@ -7,20 +7,23 @@ Scrapes retreat listings from bookretreats.com to build a lead generation databa
 KEY INSIGHT: BookRetreats embeds JSON-LD structured data on each page, making extraction
 much more reliable than parsing HTML elements.
 
-PHASE 1: Scrape search results for retreat URLs
+PHASE 1: Scrape search results for retreat URLs (with pagination)
 PHASE 2: Scrape each retreat page for detailed info from JSON-LD data
+PHASE 3: (Optional) AI extraction for descriptions, group sizes, and guides
 
 OUTPUT FORMAT: Same as retreat.guru scraper for unified pipeline processing
 """
 
 import asyncio
 import json
+import os
 import re
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 
 import pandas as pd
 from bs4 import BeautifulSoup
+from openai import OpenAI
 from playwright.async_api import async_playwright
 
 
@@ -36,6 +39,12 @@ REQUEST_TIMEOUT = 30  # seconds
 
 # Output file
 OUTPUT_FILE = "leads_enriched.csv"
+
+# Whether to use AI extraction for enhanced data (requires OPENAI_API_KEY)
+USE_AI_EXTRACTION = True
+
+# Maximum pages to scrape (safety limit)
+MAX_PAGES = 20
 
 
 # =============================================================================
@@ -67,6 +76,11 @@ class RetreatLead:
     latitude: str = ""
     longitude: str = ""
 
+    # Enhanced data (from AI extraction)
+    retreat_description: str = ""  # About this retreat
+    group_size: int | None = None  # Max participants
+    guides_json: str = ""          # JSON array of guide info
+
 
 @dataclass
 class ScraperStats:
@@ -74,6 +88,9 @@ class ScraperStats:
     total_events: int = 0
     unique_organizers: int = 0
     retreats_scraped: int = 0
+    skipped_events: int = 0
+    pages_scraped: int = 0
+    events_ai_enriched: int = 0
     errors: int = 0
     error_messages: list = field(default_factory=list)
 
@@ -85,12 +102,17 @@ class ScraperStats:
 class BookRetreatsScraper:
     """Scrapes retreat listings from bookretreats.com."""
 
-    def __init__(self):
+    def __init__(self, openai_api_key: str = None):
         self.browser = None
         self.page = None
         self.playwright = None
         self.stats = ScraperStats()
         self.leads: list[RetreatLead] = []
+
+        # AI client for enhanced extraction
+        self.ai_client = None
+        if openai_api_key and USE_AI_EXTRACTION:
+            self.ai_client = OpenAI(api_key=openai_api_key)
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -106,64 +128,114 @@ class BookRetreatsScraper:
         if self.playwright:
             await self.playwright.stop()
 
-    async def scrape_search_page(self, url: str) -> list[RetreatLead]:
+    async def scrape_search_page(self, url: str, skip_urls: set[str] = None) -> list[RetreatLead]:
         """
-        Navigate to search results and extract all retreat URLs,
+        Navigate to search results and extract all retreat URLs with pagination,
         then scrape each retreat page for details.
+
+        Args:
+            url: Search URL to scrape
+            skip_urls: Set of event URLs to skip (already scraped)
         """
-        print(f"Navigating to: {url}")
+        all_leads = []
+        all_retreat_urls = []
+        page_num = 1
 
-        # Load the search page
-        try:
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        except Exception as e:
-            print(f"  ⚠ Initial load warning: {str(e)[:50]}")
+        print(f"Starting paginated scrape: {url}")
 
-        # Wait for content to render
-        print("  Waiting for content to render...")
-        await self.page.wait_for_timeout(5000)
+        # Phase 1: Collect all retreat URLs from all pages
+        while page_num <= MAX_PAGES:
+            page_url = self._add_page_param(url, page_num)
+            print(f"\n  Page {page_num}: {page_url[:80]}...")
 
-        # Scroll to load more content (bookretreats may use lazy loading)
-        await self._scroll_to_load_all()
+            try:
+                await self.page.goto(page_url, wait_until="domcontentloaded", timeout=60000)
+            except Exception as e:
+                print(f"    Initial load warning: {str(e)[:50]}")
 
-        html = await self.page.content()
-        retreat_urls = self._extract_retreat_urls(html)
+            # Wait for content to render
+            await self.page.wait_for_timeout(3000)
 
-        print(f"  Found {len(retreat_urls)} retreat URLs")
+            # Scroll to load lazy content on this page
+            await self._scroll_to_load_all()
 
-        if not retreat_urls:
-            print("  ⚠ No retreats found! The page structure may have changed.")
+            html = await self.page.content()
+            retreat_urls = self._extract_retreat_urls(html)
+
+            if not retreat_urls:
+                print(f"    No more retreats found on page {page_num}")
+                break
+
+            # Filter out already-scraped URLs
+            new_urls = retreat_urls
+            if skip_urls:
+                new_urls = [u for u in retreat_urls if u not in skip_urls]
+                skipped = len(retreat_urls) - len(new_urls)
+                if skipped > 0:
+                    print(f"    Found {len(retreat_urls)} retreats, skipping {skipped} already-scraped")
+                    self.stats.skipped_events += skipped
+                else:
+                    print(f"    Found {len(retreat_urls)} new retreat URLs")
+            else:
+                print(f"    Found {len(retreat_urls)} retreat URLs")
+
+            # Add to master list (avoiding duplicates within this session)
+            for u in new_urls:
+                if u not in all_retreat_urls:
+                    all_retreat_urls.append(u)
+
+            self.stats.pages_scraped += 1
+            page_num += 1
+
+            # Small delay between pages
+            await asyncio.sleep(PAGE_DELAY)
+
+        print(f"\n  Total unique retreat URLs to scrape: {len(all_retreat_urls)}")
+
+        if not all_retreat_urls:
+            print("  No retreats found to scrape!")
             return []
 
-        # Scrape each retreat page
-        leads = []
-        for i, retreat_url in enumerate(retreat_urls):
-            print(f"  [{i+1}/{len(retreat_urls)}] Scraping: {retreat_url}")
+        # Phase 2: Scrape each retreat page
+        for i, retreat_url in enumerate(all_retreat_urls):
+            print(f"  [{i+1}/{len(all_retreat_urls)}] Scraping: {retreat_url[:60]}...")
 
             try:
                 lead = await self._scrape_retreat_page(retreat_url)
                 if lead and lead.title:
-                    leads.append(lead)
+                    all_leads.append(lead)
                     self.stats.retreats_scraped += 1
             except Exception as e:
                 error_msg = f"Error scraping {retreat_url}: {str(e)[:50]}"
-                print(f"    ⚠ {error_msg}")
+                print(f"    {error_msg}")
                 self.stats.errors += 1
                 self.stats.error_messages.append(error_msg)
 
             # Be respectful
             await asyncio.sleep(PAGE_DELAY)
 
-        self.stats.total_events = len(leads)
+        self.stats.total_events = len(all_leads)
 
         # Count unique organizers
-        unique_orgs = set(lead.organizer for lead in leads if lead.organizer)
+        unique_orgs = set(lead.organizer for lead in all_leads if lead.organizer)
         self.stats.unique_organizers = len(unique_orgs)
 
-        print(f"  Successfully scraped {len(leads)} retreats")
+        print(f"\n  Successfully scraped {len(all_leads)} retreats")
         print(f"  Unique organizers: {self.stats.unique_organizers}")
 
-        return leads
+        return all_leads
+
+    def _add_page_param(self, url: str, page_num: int) -> str:
+        """Add or update pageNumber parameter in URL."""
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+
+        # Update pageNumber
+        params['pageNumber'] = [str(page_num)]
+
+        # Rebuild URL
+        new_query = urlencode(params, doseq=True)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{new_query}"
 
     async def _scroll_to_load_all(self):
         """Scroll down to trigger lazy loading of all retreats."""
@@ -295,7 +367,43 @@ class BookRetreatsScraper:
         elif lead.organizer and lead.location_city:
             lead.search_query = f"{lead.organizer} {lead.location_city}"
 
+        # === AI EXTRACTION (if available) ===
+        if self.ai_client:
+            try:
+                await self._enrich_lead_with_ai(lead, html)
+            except Exception as e:
+                print(f"    AI extraction warning: {str(e)[:50]}")
+
         return lead
+
+    async def _enrich_lead_with_ai(self, lead: RetreatLead, html: str) -> None:
+        """
+        Use AI to extract enhanced data from retreat page HTML.
+
+        Extracts:
+        - Retreat description
+        - Group size
+        - Guide information
+        """
+        from extract_with_ai import extract_retreat_details, enrich_guides_with_ids
+
+        try:
+            details = await extract_retreat_details(html, self.ai_client, "bookretreats.com")
+
+            # Apply results
+            if details.get("description"):
+                lead.retreat_description = details["description"]
+            if details.get("group_size"):
+                lead.group_size = details["group_size"]
+            if details.get("guides"):
+                # Add guide IDs for deduplication
+                guides = enrich_guides_with_ids(details["guides"])
+                lead.guides_json = json.dumps(guides)
+
+            self.stats.events_ai_enriched += 1
+
+        except Exception as e:
+            print(f"    AI extraction failed: {str(e)[:50]}")
 
     def _extract_json_ld(self, soup: BeautifulSoup) -> dict | None:
         """Extract JSON-LD structured data from page."""
@@ -422,7 +530,7 @@ class BookRetreatsScraper:
 
         data = []
         for lead in leads:
-            data.append({
+            row = {
                 "organizer": lead.organizer,
                 "title": lead.title,
                 "location_city": lead.location_city,
@@ -437,7 +545,17 @@ class BookRetreatsScraper:
                 "host_email_scraped": lead.host_email,
                 "latitude": lead.latitude,
                 "longitude": lead.longitude,
-            })
+            }
+
+            # Add enhanced fields if available (from AI extraction)
+            if lead.retreat_description:
+                row["retreat_description"] = lead.retreat_description
+            if lead.group_size:
+                row["group_size"] = lead.group_size
+            if lead.guides_json:
+                row["guides_json"] = lead.guides_json
+
+            data.append(row)
 
         df = pd.DataFrame(data)
 
@@ -452,16 +570,26 @@ class BookRetreatsScraper:
         print("\n" + "=" * 60)
         print("SCRAPING SUMMARY (BookRetreats)")
         print("=" * 60)
-        print(f"   Total retreats:       {self.stats.total_events}")
+        print(f"   Pages scraped:        {self.stats.pages_scraped}")
+        print(f"   Total new retreats:   {self.stats.total_events}")
+        print(f"   Skipped (duplicates): {self.stats.skipped_events}")
         print(f"   Unique organizers:    {self.stats.unique_organizers}")
         print(f"   Successfully scraped: {self.stats.retreats_scraped}")
+        if self.ai_client:
+            print(f"   Events AI-enriched:   {self.stats.events_ai_enriched}")
         print(f"   Errors:               {self.stats.errors}")
         print("-" * 60)
+        print("\nNEXT STEPS:")
+        print("   1. Open leads_enriched.csv")
+        print("   2. Use 'search_query' column to find businesses on Google Maps")
+        print("   3. Extract website, phone, email from Google Business listings")
+        print("=" * 60)
 
 
 # =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
+
 
 async def main():
     """Main entry point for the scraper."""
@@ -472,9 +600,13 @@ async def main():
     print("=" * 60)
     print(f"Target URL: {test_url}")
     print(f"Output file: {OUTPUT_FILE}")
+    print(f"AI extraction: {USE_AI_EXTRACTION}")
     print("=" * 60 + "\n")
 
-    async with BookRetreatsScraper() as scraper:
+    # Get OpenAI key if available
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+
+    async with BookRetreatsScraper(openai_api_key=openai_key) as scraper:
         leads = await scraper.scrape_search_page(test_url)
         scraper.save_to_csv(leads)
         scraper.print_summary()

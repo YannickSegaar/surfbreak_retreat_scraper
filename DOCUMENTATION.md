@@ -16,29 +16,32 @@ Surfbreak wants to find retreat facilitators who might host their retreats at th
 ### The Solution
 
 A 7-step automated pipeline that:
-1. Scrapes retreat listings from multiple platforms
-2. Enriches with Google Places data (phone, website, coordinates)
-3. Scrapes websites for email and social media
-4. Appends to a master database with deduplication
-5. **AI-powered lead analysis** (classification, profiles, outreach talking points)
-6. **Calculates distance** to Surfbreak PXM using Haversine formula
-7. Outputs prioritized, sales-ready lead list
+1. Scrapes retreat listings from multiple platforms (with **auto-labeling** and **pagination**)
+2. **Skips already-scraped retreats** (deduplication by event URL)
+3. **AI-extracts enhanced data** (retreat descriptions, group sizes, guide profiles)
+4. Enriches with Google Places data (phone, website, coordinates)
+5. Scrapes websites for email and social media
+6. Appends to a master database with cross-platform deduplication
+7. **AI-powered lead analysis** (classification, profiles, outreach talking points)
+8. **Calculates distance** to Surfbreak PXM using Haversine formula
+9. Outputs prioritized, sales-ready lead list
 
 ---
 
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Supported Platforms](#supported-platforms)
-3. [Complete Pipeline Flow](#complete-pipeline-flow)
-4. [AI-Powered Lead Analysis](#ai-powered-lead-analysis)
-5. [Distance Calculations](#distance-calculations)
-6. [Lead Prioritization System](#lead-prioritization-system)
-7. [Scripts & Components](#scripts--components)
-8. [Input & Output Specifications](#input--output-specifications)
-9. [Usage Guide](#usage-guide)
-10. [Cost Analysis](#cost-analysis)
-11. [Technical Implementation](#technical-implementation)
+2. [Key Features](#key-features)
+3. [Supported Platforms](#supported-platforms)
+4. [Complete Pipeline Flow](#complete-pipeline-flow)
+5. [AI-Powered Lead Analysis](#ai-powered-lead-analysis)
+6. [Distance Calculations](#distance-calculations)
+7. [Lead Prioritization System](#lead-prioritization-system)
+8. [Scripts & Components](#scripts--components)
+9. [Input & Output Specifications](#input--output-specifications)
+10. [Usage Guide](#usage-guide)
+11. [Cost Analysis](#cost-analysis)
+12. [Technical Implementation](#technical-implementation)
 
 ---
 
@@ -170,6 +173,99 @@ A 7-step automated pipeline that:
                               |  With AI profiles   |
                               |  & talking points   |
                               +---------------------+
+```
+
+---
+
+## Key Features
+
+### Auto-Labeling from URL
+
+**No more manual labels!** The system automatically generates labels and descriptions from URL parameters.
+
+```bash
+# Before: Required manual --label
+uv run python run_pipeline.py --url "https://retreat.guru/search?topic=yoga&country=mexico" --label "rg-yoga-mexico"
+
+# After: Auto-generates label from URL
+uv run python run_pipeline.py --url "https://retreat.guru/search?topic=yoga&country=mexico"
+# Generates: label="rg-yoga-mexico", description="Retreats scraped from retreat.guru | Retreat Types: yoga | Locations: mexico"
+```
+
+**Complex URL handling:**
+```
+URL: https://retreat.guru/search?topic=yoga&topic=meditation&country=mexico&experiences_type=ayahuasca
+Label: rg-yoga-meditation-mexico-ayahuasca
+Description: Retreats scraped from retreat.guru | Retreat Types: yoga, meditation | Experiences: ayahuasca | Locations: mexico
+```
+
+**Implementation:** `url_parser.py`
+
+### Deduplication (Skip Already-Scraped)
+
+When running a new scrape, the pipeline automatically skips retreats that already exist in `leads_master.csv`.
+
+**How it works:**
+1. Load existing `event_url` values from master CSV
+2. During scraping, compare each retreat URL against existing URLs
+3. Skip if already scraped, continue if new
+4. Report how many were skipped
+
+**Output:**
+```
+✓ Found 127 existing retreats (will skip duplicates)
+  Page 1: Found 50 retreats, skipping 23 already-scraped
+  Page 2: Found 50 retreats, skipping 15 already-scraped
+  Total new retreats to scrape: 62
+```
+
+### Enhanced Data Extraction (AI-Powered)
+
+For each retreat page, the system now extracts additional data using GPT-4o-mini:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `retreat_description` | About this retreat (500 chars) | "Join us for a transformative 7-day yoga and meditation retreat in beautiful Tulum..." |
+| `group_size` | Maximum participants | `12` |
+| `guides_json` | JSON array of guide profiles | `[{"name": "Sarah Jones", "role": "Lead Instructor", "bio": "...", "guide_id": "abc123"}]` |
+
+**Guide Profile Structure:**
+```json
+{
+  "name": "Sarah Jones",
+  "role": "Lead Yoga Instructor",
+  "bio": "Sarah has been teaching yoga for 15 years...",
+  "photo_url": "https://example.com/sarah.jpg",
+  "profile_url": "/teachers/123/sarah-jones",
+  "credentials": "RYT-500, E-RYT 200",
+  "guide_id": "a1b2c3d4e5f6"
+}
+```
+
+**Implementation:** `extract_with_ai.py`
+
+**Cost:** ~$0.001 per retreat page (GPT-4o-mini)
+
+### Pagination for BookRetreats
+
+The BookRetreats scraper now supports full pagination:
+
+- Automatically iterates through all search result pages
+- Uses `pageNumber` parameter to navigate
+- Stops when no more retreats found or page limit (20) reached
+- Combines results from all pages before processing
+
+**Output:**
+```
+Starting paginated scrape: https://bookretreats.com/s/yoga-retreats/mexico
+
+  Page 1: Found 50 new retreat URLs
+  Page 2: Found 50 new retreat URLs
+  Page 3: Found 50 new retreat URLs
+  Page 4: Found 32 new retreat URLs
+  Page 5: No more retreats found
+
+  Total unique retreat URLs to scrape: 182
 ```
 
 ---
@@ -534,7 +630,9 @@ surfbreak_retreat_scraper/
 |
 +-- run_pipeline.py             # Main orchestrator (CLI interface)
 +-- scraper.py                  # retreat.guru scraper
-+-- scraper_bookretreats.py     # bookretreats.com scraper
++-- scraper_bookretreats.py     # bookretreats.com scraper (with pagination)
++-- url_parser.py               # NEW: URL parsing & auto-label generation
++-- extract_with_ai.py          # NEW: AI extraction for descriptions/guides
 +-- enrich_google.py            # Google Places API + distance calculations
 +-- enrich_website.py           # Website contact scraping
 +-- enrich_ai.py                # AI-powered lead analysis (OpenAI)
@@ -546,6 +644,7 @@ surfbreak_retreat_scraper/
 |
 +-- README.md                   # Quick start guide
 +-- DOCUMENTATION.md            # This file
++-- CLIENT_GUIDE.md             # Non-technical client guide
 ```
 
 ### Script Details
@@ -556,7 +655,8 @@ surfbreak_retreat_scraper/
 
 **Features:**
 - Auto-detects platform from URL
-- CLI arguments for URL and label
+- **Auto-generates labels and descriptions** from URL parameters (--label is now optional)
+- **Deduplicates** by skipping already-scraped event URLs
 - Handles missing API keys gracefully
 - Runs AI enrichment if OPENAI_API_KEY is set
 - Cleans up intermediate files
@@ -564,16 +664,68 @@ surfbreak_retreat_scraper/
 
 **Usage:**
 ```bash
-# retreat.guru
+# With auto-generated label (NEW! - label is optional)
+uv run python run_pipeline.py \
+  --url "https://retreat.guru/search?topic=yoga&country=mexico"
+
+# With custom label (optional override)
 uv run python run_pipeline.py \
   --url "https://retreat.guru/search?topic=yoga&country=mexico" \
-  --label "rg-yoga-mexico"
+  --label "custom-label"
 
-# bookretreats.com
+# Complex URL with multiple filters
 uv run python run_pipeline.py \
-  --url "https://bookretreats.com/s/yoga-retreats/mexico" \
-  --label "br-yoga-mexico"
+  --url "https://retreat.guru/search?topic=yoga&topic=meditation&country=mexico&experiences_type=ayahuasca"
 ```
+
+#### `url_parser.py` - URL Parsing & Auto-Labeling
+
+**Purpose:** Parse search URLs and generate labels/descriptions automatically
+
+**Features:**
+- Parses retreat.guru URL parameters (topic, country, experiences_type, etc.)
+- Parses bookretreats.com URL parameters (scopes[type], scopes[location], etc.)
+- Generates human-readable labels: `rg-yoga-mexico`, `br-meditation-costa-rica`
+- Generates rich descriptions: `"Retreats scraped from retreat.guru | Retreat Types: yoga | Locations: mexico"`
+
+**Usage:**
+```python
+from url_parser import parse_url, generate_label, generate_description
+
+url_data = parse_url("https://retreat.guru/search?topic=yoga&country=mexico")
+label = generate_label(url_data)  # "rg-yoga-mexico"
+description = generate_description(url_data)  # "Retreats scraped from..."
+```
+
+#### `extract_with_ai.py` - AI-Powered Data Extraction
+
+**Purpose:** Extract structured data from retreat pages using GPT-4o-mini
+
+**Features:**
+- Extracts retreat descriptions (500 chars max)
+- Extracts group size (max participants)
+- Extracts guide/facilitator profiles (name, role, bio, photo, credentials)
+- HTML preprocessing to reduce token usage
+- Platform-specific selectors for retreat.guru and bookretreats.com
+- Guide ID generation for cross-retreat deduplication
+
+**Usage:**
+```python
+from extract_with_ai import extract_retreat_details, enrich_guides_with_ids
+
+details = await extract_retreat_details(html, openai_client, "retreat.guru")
+# Returns:
+# {
+#   "description": "About this retreat...",
+#   "group_size": 12,
+#   "guides": [{"name": "...", "role": "...", "bio": "..."}]
+# }
+
+guides = enrich_guides_with_ids(details["guides"])
+# Adds guide_id to each guide for deduplication
+```
+
+**Cost:** ~$0.001 per page with GPT-4o-mini
 
 #### `enrich_ai.py` - AI-Powered Lead Analysis
 
@@ -655,15 +807,16 @@ places.location  # For lat/lng and distance calculations
 
 #### `leads_master.csv` - Master Database
 
-All leads from all scrapes, with **40 columns**:
+All leads from all scrapes, with **43+ columns**:
 
-**Identification & Source (6 columns):**
+**Identification & Source (7 columns):**
 | Column | Description | Example |
 |--------|-------------|---------|
 | `unique_id` | SHA256 hash of organizer name (12 chars) | `a1b2c3d4e5f6` |
 | `source_platform` | Which site it came from | `retreat.guru` |
-| `source_label` | User-defined batch label | `rg-yoga-mexico` |
+| `source_label` | Auto-generated or custom batch label | `rg-yoga-mexico` |
 | `scrape_date` | When scraped | `2024-12-26 17:43:22` |
+| `scrape_description` | Rich text describing filters used | `Retreats scraped from retreat.guru \| Retreat Types: yoga \| Locations: mexico` |
 | `source_url` | Search URL used | `https://retreat.guru/search?...` |
 | `search_query` | Query sent to Google Places | `Yandara Yoga Todos Santos Mexico` |
 
@@ -703,11 +856,18 @@ All leads from all scrapes, with **40 columns**:
 | `google_reviews` | Review count | `127` |
 | `google_maps_url` | Google Maps link | `https://maps.google.com/?cid=...` |
 
-**Location Data (3 columns):**
+**Location Data (2 columns):**
 | Column | Description | Example |
 |--------|-------------|---------|
 | `latitude` | GPS latitude | `23.4567` |
 | `longitude` | GPS longitude | `-110.2345` |
+
+**Enhanced Retreat Data (3 columns - from AI extraction):**
+| Column | Description | Example |
+|--------|-------------|---------|
+| `retreat_description` | About this retreat (500 chars max) | `"Join us for a transformative 7-day yoga retreat..."` |
+| `group_size` | Maximum participants | `12` |
+| `guides_json` | JSON array of guide profiles | `[{"name": "Sarah", "role": "Instructor", "guide_id": "abc123"}]` |
 
 **AI Enrichment (8 columns):**
 | Column | Description | Example |
@@ -928,6 +1088,7 @@ uv run python analyze_leads.py
 
 ### OpenAI API Costs (GPT-4o-mini)
 
+**AI Lead Analysis (`enrich_ai.py`):**
 | Metric | Value |
 |--------|-------|
 | Input tokens per lead | ~1,500 |
@@ -938,16 +1099,27 @@ uv run python analyze_leads.py
 
 **Note:** Cached results (30-day TTL) are free on re-runs.
 
+**AI Retreat Extraction (`extract_with_ai.py`):**
+| Metric | Value |
+|--------|-------|
+| Input tokens per page | ~800 |
+| Output tokens per page | ~200 |
+| Cost per page | ~$0.001 |
+| **100 retreat pages** | **~$0.10** |
+| **1,000 retreat pages** | **~$1.00** |
+
+**Total OpenAI Cost per 100 leads:** ~$0.35
+
 ### Time Costs
 
 | Step | Duration (100 leads) |
 |------|---------------------|
-| Scraping | 5-10 minutes |
+| Scraping + AI extraction | 10-15 minutes |
 | Google enrichment | 1-2 minutes |
 | Website scraping | 3-5 minutes |
-| AI enrichment | 5-10 minutes |
-| Analysis | < 1 second |
-| **Total** | ~15-25 minutes |
+| AI lead analysis | 5-10 minutes |
+| Lead analysis | < 1 second |
+| **Total** | ~20-30 minutes |
 
 ---
 
