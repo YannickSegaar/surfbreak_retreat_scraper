@@ -39,9 +39,10 @@ A 7-step automated pipeline that:
 7. [Lead Prioritization System](#lead-prioritization-system)
 8. [Scripts & Components](#scripts--components)
 9. [Input & Output Specifications](#input--output-specifications)
-10. [Usage Guide](#usage-guide)
-11. [Cost Analysis](#cost-analysis)
-12. [Technical Implementation](#technical-implementation)
+10. [Airtable Integration](#airtable-integration)
+11. [Usage Guide](#usage-guide)
+12. [Cost Analysis](#cost-analysis)
+13. [Technical Implementation](#technical-implementation)
 
 ---
 
@@ -995,6 +996,52 @@ Group fields into sections:
 - "AI Analysis" - ai_classification through ai_green_flags
 - "Scoring" - priority_score through name_classification
 ```
+
+---
+
+## Airtable Integration
+
+### Three-Table Structure
+
+For CRM functionality, we recommend a three-table Airtable structure:
+
+| Table | Description | Primary Key |
+|-------|-------------|-------------|
+| **Retreat Centers** | Unique organizers (your leads) - one record per organizer with contact info, AI analysis, and sales tracking | `center_id` (= `unique_id`) |
+| **Retreat Events** | Individual retreat listings linked to Centers | `event_id` |
+| **Retreat Guides** | Facilitators who lead retreats, linked to Events | `guide_id` |
+
+### Table Descriptions
+
+**Retreat Centers:**
+> Unique retreat organizers and facilitators - your primary sales leads. Each row represents one organizer, regardless of how many retreats they have listed. This is your main CRM table for tracking outreach and managing the sales pipeline. Includes AI-generated classifications, contact information, and priority scores.
+
+**Retreat Events:**
+> Individual retreat listings scraped from retreat.guru and bookretreats.com. Each row represents a single retreat event. Multiple events may belong to the same organizer (linked via the Center field). This table stores event-specific details like dates, pricing, and descriptions.
+
+**Retreat Guides:**
+> Individual guides, facilitators, and instructors who lead retreat events. The same guide may appear across multiple retreats and multiple organizers. This table enables tracking of specific teachers and understanding team compositions. Guide data is extracted via AI from retreat pages.
+
+### Setup Options
+
+**Option 1: n8n Automated Import (Recommended)**
+
+Use the n8n workflow in `AIRTABLE_N8N_SETUP.md` to automatically:
+- Upsert Centers (deduplicated by `unique_id`)
+- Create Events linked to Centers
+- Upsert Guides linked to Events
+
+**Option 2: Airtable AI Prompts**
+
+Copy the three prompts from `AIRTABLE_N8N_SETUP.md` into Airtable's AI assistant to create all tables with correct field types and views.
+
+### Documentation Reference
+
+See `AIRTABLE_N8N_SETUP.md` for:
+- Complete Airtable AI prompts for all three tables
+- n8n workflow JSON for automated import
+- Field mapping reference
+- Relationship diagrams
 
 ---
 

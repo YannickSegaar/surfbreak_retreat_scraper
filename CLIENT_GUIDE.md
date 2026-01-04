@@ -171,9 +171,39 @@ Each lead is assigned a **lead type**:
 
 ## Using Airtable
 
-### Initial Setup
+### Three-Table Structure (Recommended)
 
-The system generates a CSV file called `leads_analyzed.csv` that you import into Airtable.
+For best results, we recommend a three-table Airtable structure with linked records:
+
+| Table | Purpose | Records |
+|-------|---------|---------|
+| **Retreat Centers** | Your main CRM - unique organizers/facilitators | One record per organizer |
+| **Retreat Events** | Individual retreat listings | All scraped events |
+| **Retreat Guides** | Facilitators who lead retreats | Deduplicated guides |
+
+**Benefits:**
+- **No duplicate organizers** - Even if someone has 10 retreats, they appear once in Centers
+- **Linked records** - Click a center to see all their events and guides
+- **Better sales workflow** - Focus on Centers table for outreach
+- **Guide tracking** - See which facilitators work with which organizers
+
+### Option 1: Automated Import via n8n (Recommended)
+
+Use the n8n workflow to automatically:
+1. Create/update Center records (deduplicated by organizer)
+2. Create Event records linked to Centers
+3. Create/update Guide records linked to Events
+
+See `AIRTABLE_N8N_SETUP.md` for complete setup instructions and Airtable AI prompts.
+
+### Option 2: Simple Single-Table Import
+
+If you prefer simplicity, import `leads_analyzed.csv` directly:
+
+1. Open Airtable and create a new base
+2. Use the Airtable AI assistant with the setup prompt (in DOCUMENTATION.md)
+3. Import the `leads_analyzed.csv` file
+4. The fields will automatically map to the correct columns
 
 **Pre-configured views:**
 
@@ -184,13 +214,6 @@ The system generates a CSV file called `leads_analyzed.csv` that you import into
 5. **Venue Owners (Skip)** - Competitors to avoid
 6. **Needs Review** - Unclear leads that need manual review
 7. **By Platform** - Grouped by source website
-
-### How to Import
-
-1. Open Airtable and create a new base
-2. Use the Airtable AI assistant with the setup prompt (in DOCUMENTATION.md)
-3. Import the `leads_analyzed.csv` file
-4. The fields will automatically map to the correct columns
 
 ---
 
