@@ -449,12 +449,15 @@ class RetreatScraper:
         Scrape a single center page for detailed info.
 
         Extracts:
+        - Center name (from H1)
         - Detailed address
-        - Center description
+        - Center description (Mission & Vision)
         - Center profile picture/avatar
         - Google Maps URL
         - Rating and review count
         - ALL guide profile URLs (for later direct scraping)
+
+        Uses JSON-LD structured data first (most reliable), then falls back to HTML parsing.
         """
         # Try with domcontentloaded first (faster), fall back to shorter timeout
         try:
@@ -470,124 +473,209 @@ class RetreatScraper:
 
         data = {
             "center_id": extract_center_id(url),
+            "name": "",
+            "address": "",
+            "description": "",
             "center_photo_url": "",
             "google_maps_url": "",
             "center_rating": 0.0,
             "center_review_count": 0,
         }
 
-        # Get detailed address
+        # =================================================================
+        # STRATEGY 1: Extract from JSON-LD structured data (most reliable!)
+        # The page has <script type="application/ld+json"> with rating data
+        # =================================================================
+        json_ld_script = soup.select_one('script[type="application/ld+json"]')
+        if json_ld_script:
+            try:
+                json_ld = json.loads(json_ld_script.string)
+                # Extract rating from aggregateRating
+                if "aggregateRating" in json_ld:
+                    agg = json_ld["aggregateRating"]
+                    if "ratingValue" in agg:
+                        data["center_rating"] = float(agg["ratingValue"])
+                    if "ratingCount" in agg:
+                        data["center_review_count"] = int(agg["ratingCount"])
+
+                # Extract first image from JSON-LD
+                if "image" in json_ld and json_ld["image"]:
+                    images = json_ld["image"]
+                    if isinstance(images, list) and images:
+                        data["center_photo_url"] = images[0]
+                    elif isinstance(images, str):
+                        data["center_photo_url"] = images
+
+                # Name from JSON-LD (backup)
+                if "name" in json_ld and not data["name"]:
+                    data["name"] = json_ld["name"]
+
+            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                pass  # Fall back to HTML parsing
+
+        # =================================================================
+        # CENTER NAME - Extract from H1 heading (most reliable for display name)
+        # =================================================================
+        h1 = soup.select_one("h1")
+        if h1:
+            data["name"] = h1.get_text(strip=True)
+
+        # =================================================================
+        # DETAILED ADDRESS - Look for location element
+        # =================================================================
+        # Try data-cy first, then look for address text near location icon
         location_elem = soup.select_one("[data-cy='center-location']")
         if location_elem:
             data["address"] = location_elem.get_text(strip=True)
 
-        # Get description (first 500 chars)
-        desc_selectors = [".center-description", "[class*='about']", "article p"]
-        for selector in desc_selectors:
-            desc_elem = soup.select_one(selector)
-            if desc_elem:
-                text = desc_elem.get_text(strip=True)
-                if len(text) > 50:
-                    data["description"] = text[:500]
-                    break
+        # If no address yet, try to find it near "Location icon" image
+        if not data["address"]:
+            location_icon = soup.find("img", alt="Location icon")
+            if location_icon:
+                parent = location_icon.find_parent()
+                if parent:
+                    # Get the next sibling div with text
+                    for sibling in parent.find_next_siblings():
+                        text = sibling.get_text(strip=True)
+                        if text and len(text) > 10:
+                            data["address"] = text
+                            break
 
-        # Center profile picture/avatar
-        avatar_selectors = [
-            "img[data-cy='center-avatar']",
-            "img[data-cy='center-logo']",
-            "img[data-cy='center-image']",
-            ".center-profile img",
-            ".center-header img",
-            "header img[class*='avatar']",
-            "header img[class*='logo']",
-            "[class*='center'] img[class*='avatar']",
-            "[class*='center'] img[class*='logo']",
-            "img[class*='center-avatar']",
-            "img[class*='center-logo']",
-            # More general selectors (last resort)
-            ".hero img",
-            "header img",
-        ]
+        # =================================================================
+        # DESCRIPTION - Look for Mission & Vision section content
+        # =================================================================
+        # First try to find the Mission & Vision heading and get its sibling div
+        mission_heading = soup.find("h3", string=re.compile(r"Mission", re.I))
+        if mission_heading:
+            parent = mission_heading.find_parent()
+            if parent:
+                desc_div = parent.find("div")
+                if desc_div:
+                    text = desc_div.get_text(strip=True)
+                    if text and len(text) > 20:
+                        data["description"] = text[:1000]
 
-        for selector in avatar_selectors:
-            try:
-                img = soup.select_one(selector)
-                if img:
-                    # Check for src or srcset
-                    src = img.get("src") or ""
-                    srcset = img.get("srcset", "")
-                    if srcset and not src:
-                        src = srcset.split()[0].split(",")[0]
+        # Fallback: Try other selectors
+        if not data["description"]:
+            desc_selectors = [
+                "section p",
+                "[class*='mission'] p",
+                "[class*='vision'] p",
+                "[class*='about'] p",
+                ".prose p",
+                "main p",
+                "article p",
+            ]
 
-                    if src and not any(x in src.lower() for x in ["icon", "placeholder", "default", "avatar-default", "1x1"]):
-                        data["center_photo_url"] = urljoin(BASE_URL, src.split("?")[0])
+            for selector in desc_selectors:
+                elems = soup.select(selector)
+                for elem in elems:
+                    text = elem.get_text(strip=True)
+                    # Skip short text and avoid reviews/ratings text
+                    if len(text) > 100 and not any(skip in text.lower() for skip in ["review", "rating", "★", "verified"]):
+                        data["description"] = text[:1000]
                         break
-            except Exception:
-                continue
-
-        # Google Maps URL extraction
-        maps_selectors = [
-            "a[href*='google.com/maps']",
-            "a[href*='maps.google.com']",
-            "a[href*='goo.gl/maps']",
-            "[data-cy='google-maps-link']",
-            "a[class*='map-link']",
-            "a[class*='maps']",
-        ]
-
-        for selector in maps_selectors:
-            try:
-                link = soup.select_one(selector)
-                if link and link.get("href"):
-                    data["google_maps_url"] = link.get("href", "")
+                if data.get("description"):
                     break
-            except Exception:
-                continue
+
+        # =================================================================
+        # CENTER PHOTO - If not from JSON-LD, try HTML selectors
+        # =================================================================
+        if not data["center_photo_url"]:
+            # Try to find image with alt matching center name
+            if data["name"]:
+                center_img = soup.find("img", alt=data["name"])
+                if center_img and center_img.get("src"):
+                    data["center_photo_url"] = center_img["src"]
+
+            # Fallback to other selectors
+            if not data["center_photo_url"]:
+                avatar_selectors = [
+                    "img[data-cy='center-avatar']",
+                    "img[data-cy='center-image']",
+                    "img[data-cy='center-photo']",
+                    "[class*='center-avatar'] img",
+                    "[class*='center-image'] img",
+                    "[class*='profile'] img",
+                ]
+
+                # Paths to exclude (brand images, logos, etc.)
+                excluded_paths = [
+                    "brand/",
+                    "logo",
+                    "icon",
+                    "placeholder",
+                    "default",
+                    "avatar-default",
+                    "1x1",
+                ]
+
+                for selector in avatar_selectors:
+                    try:
+                        img = soup.select_one(selector)
+                        if img:
+                            src = img.get("src") or ""
+                            srcset = img.get("srcset", "")
+                            if srcset and not src:
+                                src = srcset.split()[0].split(",")[0]
+
+                            if src and not any(ex in src.lower() for ex in excluded_paths):
+                                data["center_photo_url"] = urljoin(BASE_URL, src.split("?")[0])
+                                break
+                    except Exception:
+                        continue
+
+        # =================================================================
+        # Google Maps URL extraction
+        # =================================================================
+        # First look for goo.gl/maps links in the address text
+        if data["address"]:
+            goo_match = re.search(r'(https?://goo\.gl/maps/\S+)', data["address"])
+            if goo_match:
+                data["google_maps_url"] = goo_match.group(1)
+                # Clean the URL from address
+                data["address"] = re.sub(r'\s*https?://goo\.gl/maps/\S+', '', data["address"]).strip()
+
+        # Try link selectors
+        if not data["google_maps_url"]:
+            maps_selectors = [
+                "a[href*='google.com/maps']",
+                "a[href*='maps.google.com']",
+                "a[href*='goo.gl/maps']",
+                "[data-cy='google-maps-link']",
+                "a[class*='map-link']",
+                "a[class*='maps']",
+            ]
+
+            for selector in maps_selectors:
+                try:
+                    link = soup.select_one(selector)
+                    if link and link.get("href"):
+                        data["google_maps_url"] = link.get("href", "")
+                        break
+                except Exception:
+                    continue
 
         # Fallback: construct Google Maps URL from address
         if not data.get("google_maps_url") and data.get("address"):
             encoded_addr = urllib.parse.quote(data["address"])
             data["google_maps_url"] = f"https://www.google.com/maps/search/{encoded_addr}"
 
-        # Rating and review count for center
-        rating_selectors = [
-            "[data-cy='center-rating']",
-            "[class*='rating']",
-            "[class*='stars']",
-            "[class*='review-score']",
-        ]
+        # =================================================================
+        # RATING & REVIEWS - Fallback if not from JSON-LD
+        # Look for "X reviews" link
+        # =================================================================
+        if data["center_review_count"] == 0:
+            reviews_link = soup.select_one('a[href="#reviews"]')
+            if reviews_link:
+                text = reviews_link.get_text(strip=True)
+                count_match = re.search(r'(\d+)\s*reviews?', text, re.I)
+                if count_match:
+                    data["center_review_count"] = int(count_match.group(1))
 
-        for selector in rating_selectors:
-            try:
-                elem = soup.select_one(selector)
-                if elem:
-                    text = elem.get_text(strip=True)
-                    # Parse rating like "4.8" or "4.8/5"
-                    rating_match = re.search(r'(\d+\.?\d*)', text)
-                    if rating_match:
-                        data["center_rating"] = float(rating_match.group(1))
-                        break
-            except Exception:
-                continue
-
-        # Review count
-        page_text = soup.get_text()
-        review_patterns = [
-            r'(\d+)\s*reviews?',
-            r'(\d+)\s*ratings?',
-            r'\((\d+)\s*reviews?\)',
-        ]
-
-        for pattern in review_patterns:
-            match = re.search(pattern, page_text, re.I)
-            if match:
-                try:
-                    data["center_review_count"] = int(match.group(1))
-                    break
-                except ValueError:
-                    pass
-
+        # =================================================================
         # Extract ALL guide profile URLs from the center page
+        # =================================================================
         guide_links = soup.select("a[href*='/teachers/']")
         guides = []
         seen_urls = set()
