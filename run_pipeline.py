@@ -32,6 +32,8 @@ FEATURES:
 OUTPUT:
 -------
 - leads_master.csv: Master database with all leads from all searches and sources
+- centers_scraped.csv: All scraped retreat centers with addresses, photos, ratings
+- guides_scraped.csv: All scraped guide/teacher profiles with bios, photos, ratings
 """
 
 import argparse
@@ -254,14 +256,31 @@ async def run_pipeline(search_url: str, source_label: str = None):
     print(f"STEP 1-2: Scraping {source_platform}")
     print("=" * 70)
 
+    # Collect guide URLs for later scraping
+    all_guide_urls = set()
+
+    # Variable to hold centers data for later use
+    scraped_centers_data = {}
+
     if source_platform == "retreat.guru":
         from scraper import RetreatScraper, ENRICH_WITH_CENTER_DATA
 
         async with RetreatScraper(openai_api_key=openai_api_key) as scraper:
-            leads = await scraper.scrape_search_page(search_url, skip_urls=existing_urls)
+            # Scrape search results with pagination (loads ALL results)
+            leads = await scraper.scrape_search_page(search_url, skip_urls=existing_urls, paginate=True)
 
             if ENRICH_WITH_CENTER_DATA and leads:
                 await scraper.enrich_with_center_data(leads)
+
+                # Collect guide URLs from center pages
+                for center_url, center_data in scraper.scraped_centers.items():
+                    if "guides" in center_data:
+                        for guide in center_data["guides"]:
+                            if guide.get("profile_url"):
+                                all_guide_urls.add(guide["profile_url"])
+
+                # Store centers data for later saving
+                scraped_centers_data = dict(scraper.scraped_centers)
 
             scraper.save_to_csv(leads, "leads_enriched.csv")
             scraper.print_summary()
@@ -285,6 +304,82 @@ async def run_pipeline(search_url: str, source_label: str = None):
         print("No new leads to process.")
         Path("leads_enriched.csv").unlink()
         return
+
+    # Step 2.5: Save Centers Data (NEW!)
+    if source_platform == "retreat.guru" and scraped_centers_data:
+        print("\n" + "=" * 70)
+        print("STEP 2.5a: Saving Centers Data")
+        print("=" * 70)
+
+        centers_data = []
+        for center_url, center_data in scraped_centers_data.items():
+            centers_data.append({
+                "center_id": center_data.get("center_id", ""),
+                "name": center_data.get("name", ""),
+                "address": center_data.get("address", ""),
+                "description": center_data.get("description", "")[:500] if center_data.get("description") else "",
+                "center_photo_url": center_data.get("center_photo_url", ""),
+                "google_maps_url": center_data.get("google_maps_url", ""),
+                "center_rating": center_data.get("center_rating", 0.0),
+                "center_review_count": center_data.get("center_review_count", 0),
+                "center_url": center_url,
+                "guide_count": len(center_data.get("guides", [])),
+                "guide_ids": ",".join([g.get("teacher_id", "") for g in center_data.get("guides", []) if g.get("teacher_id")]),
+            })
+
+        if centers_data:
+            centers_df = pd.DataFrame(centers_data)
+            centers_df.to_csv("centers_scraped.csv", index=False, encoding="utf-8")
+            print(f"✓ Saved {len(centers_data)} centers to centers_scraped.csv")
+
+    # Step 2.5b: Direct Guide Profile Scraping
+    if all_guide_urls and source_platform == "retreat.guru":
+        print("\n" + "=" * 70)
+        print("STEP 2.5b: Direct Guide Profile Scraping")
+        print("=" * 70)
+        print(f"Found {len(all_guide_urls)} unique guide profiles to scrape")
+
+        from scraper_guides import GuideProfileScraper
+
+        async with GuideProfileScraper() as guide_scraper:
+            guides = await guide_scraper.scrape_multiple_guides(list(all_guide_urls))
+            guide_scraper.print_summary()
+
+            # Save guides to separate CSV for Airtable import
+            if guides:
+                guides_data = []
+                for g in guides:
+                    guides_data.append({
+                        # Entity IDs
+                        "teacher_id": g.teacher_id,
+                        "guide_id": g.guide_id,
+
+                        # Basic info
+                        "name": g.name,
+                        "credentials": g.credentials,
+                        "role": g.role,
+
+                        # Detailed info
+                        "bio": g.bio[:500] if g.bio else "",  # Truncate for CSV
+                        "photo_url": g.photo_url,
+                        "profile_url": g.profile_url,
+
+                        # Ratings
+                        "rating": g.rating,
+                        "review_count": g.review_count,
+
+                        # Affiliations
+                        "affiliated_center": g.affiliated_center,
+                        "affiliated_center_url": g.affiliated_center_url,
+                        "affiliated_center_id": g.affiliated_center_id,
+
+                        # Stats
+                        "upcoming_retreats_count": len(g.upcoming_retreats),
+                    })
+
+                guides_df = pd.DataFrame(guides_data)
+                guides_df.to_csv("guides_scraped.csv", index=False, encoding="utf-8")
+                print(f"✓ Saved {len(guides)} guides to guides_scraped.csv")
 
     # Step 3: Google Places enrichment
     if google_api_key:

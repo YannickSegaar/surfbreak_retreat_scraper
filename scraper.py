@@ -34,6 +34,7 @@ import asyncio
 import json
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
@@ -42,6 +43,52 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from openai import OpenAI
 from playwright.async_api import async_playwright
+
+
+# =============================================================================
+# ENTITY ID EXTRACTION FUNCTIONS
+# =============================================================================
+
+def extract_event_id(url: str) -> str:
+    """
+    Extract event ID from /events/{id}/ URL pattern.
+
+    Example:
+        URL: https://retreat.guru/events/156-1449/fitflow-yoga
+        Returns: "156-1449"
+    """
+    if not url:
+        return ""
+    match = re.search(r'/events/([^/]+)/', url)
+    return match.group(1) if match else ""
+
+
+def extract_center_id(url: str) -> str:
+    """
+    Extract center ID from /centers/{id}/ URL pattern.
+
+    Example:
+        URL: https://retreat.guru/centers/156/fitflow-yoga-tulum
+        Returns: "156"
+    """
+    if not url:
+        return ""
+    match = re.search(r'/centers/([^/]+)/', url)
+    return match.group(1) if match else ""
+
+
+def extract_teacher_id(url: str) -> str:
+    """
+    Extract teacher ID from /teachers/{id}/ URL pattern.
+
+    Example:
+        URL: https://retreat.guru/teachers/156-93/shane-perkins
+        Returns: "156-93"
+    """
+    if not url:
+        return ""
+    match = re.search(r'/teachers/([^/]+)/', url)
+    return match.group(1) if match else ""
 
 
 # =============================================================================
@@ -72,27 +119,40 @@ USE_AI_EXTRACTION = True
 @dataclass
 class RetreatLead:
     """Represents a single retreat listing with enriched data."""
+
+    # Entity IDs (for deduplication and linking)
+    event_id: str = ""            # From URL: /events/{id}/
+    center_id: str = ""           # From URL: /centers/{id}/
+
     # From search page
     title: str = ""
     organizer: str = ""           # Center/venue name
     location_city: str = ""       # City, Country (from search)
     dates: str = ""
     price: str = ""
-    rating: str = ""
     event_url: str = ""
     center_url: str = ""          # URL to center page
+
+    # Ratings and reviews
+    event_rating: float = 0.0
+    event_review_count: int = 0
+    center_rating: float = 0.0
+    center_review_count: int = 0
 
     # From center page (enriched data)
     detailed_address: str = ""    # Full street address
     center_description: str = ""  # About the center
+    center_photo_url: str = ""    # Center profile picture/avatar
+    google_maps_url: str = ""     # Direct Google Maps URL
 
-    # For Google Maps lookup
+    # For Google Maps lookup (legacy)
     search_query: str = ""        # Pre-formatted search query
 
     # Enhanced data (from AI extraction)
     retreat_description: str = ""  # About this retreat
     group_size: int | None = None  # Max participants
     guides_json: str = ""          # JSON array of guide info
+    guide_ids: list = field(default_factory=list)  # List of guide IDs for linking
 
 
 @dataclass
@@ -150,13 +210,14 @@ class RetreatScraper:
         if self.playwright:
             await self.playwright.stop()
 
-    async def scrape_search_page(self, url: str, skip_urls: set[str] = None) -> list[RetreatLead]:
+    async def scrape_search_page(self, url: str, skip_urls: set[str] = None, paginate: bool = True) -> list[RetreatLead]:
         """
         Navigate to search results and extract all retreat listings.
 
         Args:
             url: Search URL to scrape
             skip_urls: Set of event URLs to skip (already scraped)
+            paginate: If True, scroll to load ALL results (default). If False, only first page.
         """
         print(f"Navigating to: {url}")
 
@@ -182,6 +243,10 @@ class RetreatScraper:
         if "search-event-tile" not in content:
             raise Exception("Page loaded but no retreat listings found")
 
+        # If pagination enabled, scroll to load ALL results
+        if paginate:
+            await self._scroll_to_load_all()
+
         html = await self.page.content()
         leads = self._extract_leads_from_search(html)
 
@@ -206,6 +271,43 @@ class RetreatScraper:
 
         return leads
 
+    async def _scroll_to_load_all(self) -> None:
+        """
+        Scroll the page to load all results (for infinite scroll/lazy loading).
+
+        Retreat Guru uses lazy loading - scrolling triggers loading of more results.
+        This method scrolls until no new results appear.
+        """
+        print("  Scrolling to load all results...")
+
+        MAX_SCROLL_ATTEMPTS = 50  # Safety limit
+        SCROLL_PAUSE = 2.0  # Seconds to wait after each scroll
+
+        previous_count = 0
+
+        for attempt in range(MAX_SCROLL_ATTEMPTS):
+            # Scroll to bottom
+            await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await self.page.wait_for_timeout(int(SCROLL_PAUSE * 1000))
+
+            # Count current results
+            current_count = await self.page.evaluate(
+                "document.querySelectorAll('article.search-event-tile').length"
+            )
+
+            if current_count == previous_count:
+                # No new results loaded - we've reached the end
+                print(f"  Loaded all {current_count} results (stopped scrolling)")
+                break
+
+            previous_count = current_count
+            if (attempt + 1) % 5 == 0:  # Progress update every 5 scrolls
+                print(f"    ... loaded {current_count} results so far")
+
+        else:
+            # Hit the safety limit
+            print(f"  Warning: Hit scroll limit at {previous_count} results")
+
     def _extract_leads_from_search(self, html: str) -> list[RetreatLead]:
         """Parse search results HTML to extract retreat data."""
         soup = BeautifulSoup(html, "lxml")
@@ -221,11 +323,12 @@ class RetreatScraper:
             if title_elem:
                 lead.title = title_elem.get_text(strip=True)
 
-            # Event URL
+            # Event URL and extract event_id
             content_link = tile.select_one("a.search-event-tile__content")
             if content_link:
                 href = content_link.get("href", "")
                 lead.event_url = urljoin(BASE_URL, href)
+                lead.event_id = extract_event_id(lead.event_url)
 
             # Location and center info
             location_elem = tile.select_one(".search-event-tile__location")
@@ -235,6 +338,7 @@ class RetreatScraper:
                 if center_link:
                     lead.organizer = center_link.get_text(strip=True)
                     lead.center_url = urljoin(BASE_URL, center_link.get("href", ""))
+                    lead.center_id = extract_center_id(lead.center_url)
 
                 # Get city, country
                 location_spans = location_elem.select("span")
@@ -256,10 +360,24 @@ class RetreatScraper:
             if price_elem:
                 lead.price = price_elem.get_text(strip=True).replace("From", "").strip()
 
-            # Rating
+            # Rating and review count from search tile
             reviews_elem = tile.select_one(".search-event-tile__reviews")
             if reviews_elem:
-                lead.rating = reviews_elem.get_text(strip=True)
+                reviews_text = reviews_elem.get_text(strip=True)
+                # Parse rating like "4.8 (42 reviews)" or just "4.8"
+                rating_match = re.search(r'(\d+\.?\d*)', reviews_text)
+                if rating_match:
+                    try:
+                        lead.event_rating = float(rating_match.group(1))
+                    except ValueError:
+                        pass
+                # Parse review count
+                count_match = re.search(r'\((\d+)', reviews_text)
+                if count_match:
+                    try:
+                        lead.event_review_count = int(count_match.group(1))
+                    except ValueError:
+                        pass
 
             if lead.title and lead.event_url:
                 leads.append(lead)
@@ -306,7 +424,17 @@ class RetreatScraper:
                 lead.detailed_address = center_data.get("address", "")
                 lead.center_description = center_data.get("description", "")
 
-                # Create Google Maps search query
+                # New fields from enhanced center scraping
+                lead.center_photo_url = center_data.get("center_photo_url", "")
+                lead.google_maps_url = center_data.get("google_maps_url", "")
+                lead.center_rating = center_data.get("center_rating", 0.0)
+                lead.center_review_count = center_data.get("center_review_count", 0)
+
+                # Collect guide IDs for linking
+                guides = center_data.get("guides", [])
+                lead.guide_ids = [g.get("teacher_id", "") for g in guides if g.get("teacher_id")]
+
+                # Create Google Maps search query (legacy fallback)
                 if lead.organizer and lead.detailed_address:
                     lead.search_query = f"{lead.organizer} {lead.detailed_address}"
                 elif lead.organizer and lead.location_city:
@@ -317,7 +445,17 @@ class RetreatScraper:
             await self._enrich_with_ai(leads)
 
     async def _scrape_center_page(self, url: str) -> dict:
-        """Scrape a single center page for detailed info."""
+        """
+        Scrape a single center page for detailed info.
+
+        Extracts:
+        - Detailed address
+        - Center description
+        - Center profile picture/avatar
+        - Google Maps URL
+        - Rating and review count
+        - ALL guide profile URLs (for later direct scraping)
+        """
         # Try with domcontentloaded first (faster), fall back to shorter timeout
         try:
             await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -330,7 +468,13 @@ class RetreatScraper:
         html = await self.page.content()
         soup = BeautifulSoup(html, "lxml")
 
-        data = {}
+        data = {
+            "center_id": extract_center_id(url),
+            "center_photo_url": "",
+            "google_maps_url": "",
+            "center_rating": 0.0,
+            "center_review_count": 0,
+        }
 
         # Get detailed address
         location_elem = soup.select_one("[data-cy='center-location']")
@@ -346,6 +490,124 @@ class RetreatScraper:
                 if len(text) > 50:
                     data["description"] = text[:500]
                     break
+
+        # Center profile picture/avatar
+        avatar_selectors = [
+            "img[data-cy='center-avatar']",
+            "img[data-cy='center-logo']",
+            "img[data-cy='center-image']",
+            ".center-profile img",
+            ".center-header img",
+            "header img[class*='avatar']",
+            "header img[class*='logo']",
+            "[class*='center'] img[class*='avatar']",
+            "[class*='center'] img[class*='logo']",
+            "img[class*='center-avatar']",
+            "img[class*='center-logo']",
+            # More general selectors (last resort)
+            ".hero img",
+            "header img",
+        ]
+
+        for selector in avatar_selectors:
+            try:
+                img = soup.select_one(selector)
+                if img:
+                    # Check for src or srcset
+                    src = img.get("src") or ""
+                    srcset = img.get("srcset", "")
+                    if srcset and not src:
+                        src = srcset.split()[0].split(",")[0]
+
+                    if src and not any(x in src.lower() for x in ["icon", "placeholder", "default", "avatar-default", "1x1"]):
+                        data["center_photo_url"] = urljoin(BASE_URL, src.split("?")[0])
+                        break
+            except Exception:
+                continue
+
+        # Google Maps URL extraction
+        maps_selectors = [
+            "a[href*='google.com/maps']",
+            "a[href*='maps.google.com']",
+            "a[href*='goo.gl/maps']",
+            "[data-cy='google-maps-link']",
+            "a[class*='map-link']",
+            "a[class*='maps']",
+        ]
+
+        for selector in maps_selectors:
+            try:
+                link = soup.select_one(selector)
+                if link and link.get("href"):
+                    data["google_maps_url"] = link.get("href", "")
+                    break
+            except Exception:
+                continue
+
+        # Fallback: construct Google Maps URL from address
+        if not data.get("google_maps_url") and data.get("address"):
+            encoded_addr = urllib.parse.quote(data["address"])
+            data["google_maps_url"] = f"https://www.google.com/maps/search/{encoded_addr}"
+
+        # Rating and review count for center
+        rating_selectors = [
+            "[data-cy='center-rating']",
+            "[class*='rating']",
+            "[class*='stars']",
+            "[class*='review-score']",
+        ]
+
+        for selector in rating_selectors:
+            try:
+                elem = soup.select_one(selector)
+                if elem:
+                    text = elem.get_text(strip=True)
+                    # Parse rating like "4.8" or "4.8/5"
+                    rating_match = re.search(r'(\d+\.?\d*)', text)
+                    if rating_match:
+                        data["center_rating"] = float(rating_match.group(1))
+                        break
+            except Exception:
+                continue
+
+        # Review count
+        page_text = soup.get_text()
+        review_patterns = [
+            r'(\d+)\s*reviews?',
+            r'(\d+)\s*ratings?',
+            r'\((\d+)\s*reviews?\)',
+        ]
+
+        for pattern in review_patterns:
+            match = re.search(pattern, page_text, re.I)
+            if match:
+                try:
+                    data["center_review_count"] = int(match.group(1))
+                    break
+                except ValueError:
+                    pass
+
+        # Extract ALL guide profile URLs from the center page
+        guide_links = soup.select("a[href*='/teachers/']")
+        guides = []
+        seen_urls = set()
+
+        for link in guide_links:
+            href = link.get("href", "")
+            if href and href not in seen_urls:
+                seen_urls.add(href)
+                profile_url = urljoin(BASE_URL, href)
+                name = link.get_text(strip=True)
+                if name and len(name) > 1:  # Skip empty or single-char names
+                    guides.append({
+                        "name": name,
+                        "profile_url": profile_url,
+                        "teacher_id": extract_teacher_id(profile_url),
+                    })
+
+        data["guides"] = guides
+        if guides:
+            print(f"    Found {len(guides)} guides on center page")
 
         return data
 
@@ -408,16 +670,35 @@ class RetreatScraper:
         data = []
         for lead in leads:
             row = {
+                # Entity IDs (for deduplication and linking)
+                "event_id": lead.event_id,
+                "center_id": lead.center_id,
+
+                # Basic info
                 "organizer": lead.organizer,
                 "title": lead.title,
                 "location_city": lead.location_city,
                 "detailed_address": lead.detailed_address,
                 "dates": lead.dates,
                 "price": lead.price,
-                "rating": lead.rating,
+
+                # Ratings and reviews
+                "event_rating": lead.event_rating,
+                "event_review_count": lead.event_review_count,
+                "center_rating": lead.center_rating,
+                "center_review_count": lead.center_review_count,
+
+                # Center info
+                "center_photo_url": lead.center_photo_url,
+                "google_maps_url": lead.google_maps_url,
+
+                # URLs
                 "event_url": lead.event_url,
                 "center_url": lead.center_url,
                 "search_query": lead.search_query,
+
+                # Guide IDs for linking
+                "guide_ids": ",".join(lead.guide_ids) if lead.guide_ids else "",
             }
 
             # Add enhanced fields if available

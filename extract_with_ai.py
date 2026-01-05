@@ -42,6 +42,42 @@ MAX_INPUT_CHARS = 12000
 # Maximum tokens for output
 MAX_OUTPUT_TOKENS = 1500
 
+# =============================================================================
+# SECTION FILTERING - Exclude review sections that can be confused with guides
+# =============================================================================
+
+EXCLUDE_SELECTORS = [
+    "[class*='review']",
+    "[class*='testimonial']",
+    "[class*='feedback']",
+    "[class*='rating']",
+    "[id*='review']",
+    ".verified-review",
+    "[class*='customer']",
+    "[class*='comment']",
+]
+
+# Headers that indicate sections to AVOID
+EXCLUDE_HEADER_PATTERNS = [
+    r'customer\s*review',
+    r'\breview\b',
+    r'testimonial',
+    r'what\s*(people|guests|customers)\s*say',
+    r'feedback',
+]
+
+# Headers that indicate sections to INCLUDE for guides
+INCLUDE_GUIDE_HEADERS = [
+    r'your\s*guide',
+    r'meet\s*(your|the)\s*guide',
+    r'your\s*teacher',
+    r'facilitator',
+    r'instructor',
+    r'about\s*the\s*teacher',
+    r'our\s*team',
+    r'host',
+]
+
 
 # =============================================================================
 # EXTRACTION PROMPT
@@ -49,39 +85,54 @@ MAX_OUTPUT_TOKENS = 1500
 
 EXTRACTION_PROMPT = """You are extracting structured data from a retreat listing page.
 
-Analyze the HTML content and extract:
+## WHAT TO EXTRACT:
 
 1. **description**: The main retreat description/about section. Max 500 characters. Look for:
    - "About This Retreat" sections
+   - "Retreat Highlights" sections
    - Overview or summary text
    - The main description paragraph
 
 2. **group_size**: Maximum number of participants (as a number). Look for:
    - "Group size", "Retreat size", "Max participants"
-   - "Up to X people/participants"
+   - "Up to X people/participants" or "Up to X in group"
    - Capacity information
 
 3. **guides**: Array of guide/facilitator/instructor information. For each person, extract:
-   - **name**: Full name
+   - **name**: Full name (often includes credentials like "E-RYT 500")
    - **role**: Their role (Guide, Facilitator, Instructor, Teacher, etc.)
    - **bio**: Their biography/description (max 300 chars)
    - **photo_url**: URL to their photo if present
-   - **profile_url**: URL to their profile page if present
+   - **profile_url**: URL to their profile page (often /teachers/ID/name-slug)
    - **credentials**: Any certifications, training, or credentials mentioned
 
+## WHERE TO FIND GUIDE INFORMATION:
 Look for sections titled:
 - "Your Guides", "Meet Your Guides"
-- "Team", "Our Team"
+- "About the Teacher"
 - "Facilitator", "Facilitators"
 - "Teachers", "Instructors"
 - "About the Host"
 
-IMPORTANT:
-- Only extract information that is actually present on the page
-- If a field is not found, use null (for single values) or [] (for arrays)
-- Do not make up or infer information
-- For photo URLs, include the full URL if available
-- For profile URLs, include relative paths if absolute URLs aren't available
+Guide sections typically have:
+- Links to /teachers/ or /teacher/ URLs
+- Professional credentials (E-RYT 500, YACEP, etc.)
+- Third-person bios describing their experience
+
+## CRITICAL: WHAT TO AVOID (DO NOT EXTRACT)
+
+❌ **CUSTOMER REVIEWS** - These are NOT guides! Avoid extracting:
+- Text with personal pronouns like "I loved", "We enjoyed", "My experience"
+- Star ratings (★★★★★) or "X/5" ratings
+- Content with dates like "January 2024" or "2 months ago"
+- Customer names like "Sarah M." or "- John D."
+- Phrases like "I would recommend", "verified guest", "reviewed on"
+
+Reviews vs Guide Bios:
+- REVIEW: "I loved this retreat! The guides were amazing..." (Past tense, personal experience)
+- GUIDE BIO: "Sarah has been teaching yoga for 15 years..." (Third person, professional background)
+
+## OUTPUT FORMAT:
 
 Return ONLY valid JSON with this exact structure:
 {
@@ -99,8 +150,117 @@ Return ONLY valid JSON with this exact structure:
   ]
 }
 
+IMPORTANT:
+- Only extract information that is actually present on the page
+- If a field is not found, use null (for single values) or [] (for arrays)
+- Do not make up or infer information
+- NEVER extract customer review text as guide bios or retreat descriptions
+
 HTML Content to analyze:
 """
+
+
+# =============================================================================
+# REVIEW DETECTION - Validate content is NOT a customer review
+# =============================================================================
+
+def is_likely_review(text: str) -> bool:
+    """
+    Check if text appears to be a customer review rather than a guide bio.
+
+    Reviews typically contain:
+    - Personal pronouns ("I", "we", "my")
+    - Past tense experience language ("I loved", "I enjoyed")
+    - Star ratings or rating patterns
+    - Review dates
+    - Customer name patterns ("Sarah M.", "- John D.")
+
+    Returns True if the text looks like a review (should be EXCLUDED).
+    """
+    if not text or len(text) < 20:
+        return False
+
+    # Red flag patterns that indicate this is a review
+    review_patterns = [
+        # Personal pronouns at sentence start (strong indicator)
+        r'(?:^|\.\s+)(I|We)\s+\w+',
+        # Past tense review phrases
+        r'\bI\s+(loved|enjoyed|had|was|felt|found|would\s+recommend)\b',
+        r'\bwe\s+(loved|enjoyed|had|were|felt|found)\b',
+        r'\bmy\s+(experience|stay|time|retreat|journey|favorite)\b',
+        # Star ratings
+        r'★|⭐|☆',
+        r'\b\d(\.\d)?\s*/\s*5\b',
+        r'\b\d\s*/\s*5\s*star',  # "5/5 stars"
+        r'\b\d(\.\d)?\s+out\s+of\s+5\b',
+        r'\b(five|four|three)\s+star',
+        r'\bstar(s)?\b.*\brecommend\b',  # "stars - Would recommend"
+        # Review date patterns
+        r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}',
+        r'reviewed\s+(on|in)',
+        r'\d+\s+(day|week|month|year)s?\s+ago',
+        # Customer name patterns
+        r'-\s*[A-Z][a-z]+\s+[A-Z]\.',  # "- Sarah M."
+        r'—\s*[A-Z][a-z]+',  # "— John"
+        r'verified\s+(guest|review|purchase)',
+    ]
+
+    text_lower = text.lower()
+    matches = 0
+
+    for pattern in review_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            matches += 1
+
+    # If 2+ patterns match, it's likely a review
+    return matches >= 2
+
+
+def validate_guide_section(element) -> bool:
+    """
+    Validate that an HTML element is a legitimate guide section, not reviews.
+
+    Checks:
+    1. The element is not inside a review container
+    2. The section header is not a review header
+    3. The content doesn't look like customer reviews
+
+    Returns True if the section appears to be a legitimate guide section.
+    """
+    # Check if element is inside an excluded container
+    for parent in element.parents:
+        if parent.name:
+            parent_classes = " ".join(parent.get("class", []))
+            parent_id = parent.get("id", "")
+
+            # Check against exclude patterns
+            for selector in EXCLUDE_SELECTORS:
+                if "class*=" in selector:
+                    pattern = selector.replace("[class*='", "").replace("']", "")
+                    if pattern in parent_classes.lower():
+                        return False
+                elif "id*=" in selector:
+                    pattern = selector.replace("[id*='", "").replace("']", "")
+                    if pattern in parent_id.lower():
+                        return False
+
+    # Check the preceding header for review indicators
+    prev_header = None
+    for sibling in element.find_previous_siblings(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        prev_header = sibling.get_text(strip=True).lower()
+        break
+
+    if prev_header:
+        for pattern in EXCLUDE_HEADER_PATTERNS:
+            if re.search(pattern, prev_header, re.IGNORECASE):
+                return False
+
+    # Check the content itself for review patterns
+    content_text = element.get_text(strip=True)
+    if is_likely_review(content_text):
+        return False
+
+    return True
 
 
 # =============================================================================
@@ -115,6 +275,9 @@ def extract_relevant_sections(html: str, platform: str = "retreat.guru") -> str:
     - Description/about sections
     - Guide/team/facilitator sections
     - Group size information
+
+    IMPORTANT: Actively excludes review/testimonial sections to prevent
+    customer reviews from being confused with guide bios.
     """
     soup = BeautifulSoup(html, "lxml")
     sections = []
@@ -123,24 +286,45 @@ def extract_relevant_sections(html: str, platform: str = "retreat.guru") -> str:
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
 
+    # FIRST: Remove all review/testimonial sections before processing
+    for selector in EXCLUDE_SELECTORS:
+        for elem in soup.select(selector):
+            elem.decompose()
+
+    # Also remove sections with review-related headers
+    for header in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        header_text = header.get_text(strip=True).lower()
+        for pattern in EXCLUDE_HEADER_PATTERNS:
+            if re.search(pattern, header_text, re.IGNORECASE):
+                # Remove this header and its following content
+                parent = header.find_parent(["section", "div", "article"])
+                if parent:
+                    parent.decompose()
+                else:
+                    header.decompose()
+                break
+
     # Platform-specific selectors
     if platform == "retreat.guru":
         # Description selectors for retreat.guru
+        # These target "About this Retreat", "Retreat Highlights", "Details of this retreat" sections
         desc_selectors = [
             "[class*='event-description']",
             "[class*='about-retreat']",
+            "[class*='retreat-highlights']",
+            "[class*='highlights']",
             "[class*='description']",
             "[class*='overview']",
+            "[class*='details']",
             "section[class*='about']",
         ]
 
-        # Guide selectors for retreat.guru
+        # Guide selectors for retreat.guru - more specific to avoid reviews
         guide_selectors = [
-            "[class*='teacher']",
+            "a[href*='/teachers/']",  # Most reliable - links to teacher profiles
+            "[class*='your-guide']",
+            "[class*='meet-guide']",
             "[class*='guide']",
-            "[class*='facilitator']",
-            "section[class*='team']",
-            "a[href*='/teachers/']",
         ]
 
     else:  # bookretreats.com
@@ -155,26 +339,49 @@ def extract_relevant_sections(html: str, platform: str = "retreat.guru") -> str:
 
         # Guide selectors for bookretreats
         guide_selectors = [
-            "[class*='team']",
-            "[class*='facilitator']",
-            "[class*='teacher']",
-            "[class*='instructor']",
             "a[href*='/teacher/']",
+            "[class*='instructor']",
+            "[class*='host']",
         ]
 
-    # Extract description sections
+    # Extract description sections by CSS selector
     for selector in desc_selectors:
         for elem in soup.select(selector)[:3]:
             text = str(elem)[:3000]
             if len(text) > 100:  # Only include substantial content
-                sections.append(f"<!-- DESCRIPTION SECTION -->\n{text}")
+                # Double-check it's not a review that slipped through
+                if not is_likely_review(elem.get_text(strip=True)):
+                    sections.append(f"<!-- DESCRIPTION SECTION -->\n{text}")
 
-    # Extract guide sections
+    # Also find sections by their header text (more reliable for retreat.guru)
+    description_headers = [
+        r'about\s+(this\s+)?retreat',
+        r'retreat\s+highlights',
+        r'details\s+of\s+(this\s+)?retreat',
+        r'overview',
+        r'what\s+to\s+expect',
+    ]
+
+    for header in soup.find_all(["h2", "h3"]):
+        header_text = header.get_text(strip=True).lower()
+        for pattern in description_headers:
+            if re.search(pattern, header_text, re.IGNORECASE):
+                # Get the content following this header
+                next_sibling = header.find_next_sibling()
+                if next_sibling:
+                    content = str(next_sibling)[:2000]
+                    if len(content) > 100 and not is_likely_review(next_sibling.get_text(strip=True)):
+                        sections.append(f"<!-- HEADER: {header_text} -->\n{content}")
+                break
+
+    # Extract guide sections - with validation
     for selector in guide_selectors:
         for elem in soup.select(selector)[:5]:
-            text = str(elem)[:2500]
-            if len(text) > 50:
-                sections.append(f"<!-- GUIDE SECTION -->\n{text}")
+            # Validate this is a real guide section, not reviews
+            if validate_guide_section(elem):
+                text = str(elem)[:2500]
+                if len(text) > 50:
+                    sections.append(f"<!-- GUIDE SECTION -->\n{text}")
 
     # Look for group size with regex patterns
     size_patterns = [
