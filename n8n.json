@@ -1,0 +1,1482 @@
+
+{
+  "name": "Surfbreak CSV to Airtable Import",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        208,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "CSV_File",
+        "fileFormat": "csv",
+        "options": {
+          "headerRow": true
+        }
+      },
+      "id": "read_csv",
+      "name": "Read CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 2,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process each CSV row and prepare for Airtable\nconst items = $input.all();\nconst output = [];\n\nfor (const item of items) {\n  const row = item.json;\n  \n  // Parse guides_json if it exists\n  let guides = [];\n  if (row.guides_json && row.guides_json !== '') {\n    try {\n      guides = JSON.parse(row.guides_json);\n    } catch (e) {\n      guides = [];\n    }\n  }\n  \n  // Generate event_id from unique_id + event_url hash\n  const eventIdBase = row.unique_id + '-' + (row.event_url ? row.event_url.slice(-20).replace(/[^a-zA-Z0-9]/g, '') : Date.now());\n  \n  output.push({\n    json: {\n      // Center data (for upsert)\n      center_id: row.unique_id || '',\n      organizer_name: row.organizer || '',\n      phone: row.phone || '',\n      email: row.email || '',\n      website: row.website || '',\n      instagram: row.instagram || '',\n      facebook: row.facebook || '',\n      linkedin: row.linkedin || '',\n      twitter: row.twitter || '',\n      youtube: row.youtube || '',\n      tiktok: row.tiktok || '',\n      google_business_name: row.google_business_name || '',\n      google_address: row.google_address || '',\n      google_rating: row.google_rating ? parseFloat(row.google_rating) : null,\n      google_reviews: row.google_reviews ? parseInt(row.google_reviews) : null,\n      google_maps_url: row.google_maps_url || '',\n      latitude: row.latitude ? parseFloat(row.latitude) : null,\n      longitude: row.longitude ? parseFloat(row.longitude) : null,\n      distance_to_surfbreak_miles: row.distance_to_surfbreak_miles ? parseFloat(row.distance_to_surfbreak_miles) : null,\n      ai_classification: row.ai_classification || '',\n      ai_confidence: row.ai_confidence ? parseInt(row.ai_confidence) : null,\n      profile_summary: row.profile_summary || '',\n      website_analysis: row.website_analysis || '',\n      outreach_talking_points: row.outreach_talking_points || '',\n      fit_reasoning: row.fit_reasoning || '',\n      ai_red_flags: row.ai_red_flags || '',\n      ai_green_flags: row.ai_green_flags || '',\n      priority_score: row.priority_score ? parseInt(row.priority_score) : 0,\n      lead_type: row.lead_type || '',\n      retreat_count: row.retreat_count ? parseInt(row.retreat_count) : 0,\n      unique_locations: row.unique_locations ? parseInt(row.unique_locations) : 0,\n      is_traveling_facilitator: row.is_traveling_facilitator === 'True' || row.is_traveling_facilitator === true,\n      is_multi_platform: row.is_multi_platform === 'True' || row.is_multi_platform === true,\n      \n      // Event data\n      event_id: eventIdBase,\n      title: row.title || '',\n      dates: row.dates || '',\n      price: row.price || '',\n      location_city: row.location_city || '',\n      detailed_address: row.detailed_address || '',\n      event_url: row.event_url || '',\n      center_url: row.center_url || '',\n      retreat_description: row.retreat_description || '',\n      group_size: row.group_size ? parseInt(row.group_size) : null,\n      rating: row.rating || '',\n      source_platform: row.source_platform || '',\n      source_label: row.source_label || '',\n      scrape_description: row.scrape_description || '',\n      scrape_date: row.scrape_date || '',\n      source_url: row.source_url || '',\n      \n      // Guides array for later processing\n      guides: guides\n    }\n  });\n}\n\nreturn output;"
+      },
+      "id": "process_data",
+      "name": "Process Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split guides into individual items for processing\nconst items = $input.all();\nconst limitItems = $('Limit').all();\nconst output = [];\n\nfor (let i = 0; i < items.length; i++) {\n  // Get guides_json from Limit node (original CSV data)\n  const guidesJson = limitItems[i].json.guides_json || '';\n  \n  // Parse guides\n  let guides = [];\n  if (guidesJson && guidesJson !== '') {\n    try {\n      guides = JSON.parse(guidesJson);\n    } catch (e) {\n      guides = [];\n    }\n  }\n  \n  // Get event record ID from Create Event node (current input)\n  const eventRecordId = items[i].json.id;\n  \n  if (!guides || guides.length === 0) {\n    // No guides for this event, output skip marker\n    output.push({\n      json: {\n        skip: true\n      }\n    });\n    continue;\n  }\n  \n  for (const guide of guides) {\n    output.push({\n      json: {\n        guide_id: guide.guide_id || '',\n        name: guide.name || '',\n        role: guide.role || '',\n        bio: guide.bio || '',\n        photo_url: guide.photo_url || '',\n        profile_url: guide.profile_url || '',\n        credentials: guide.credentials || '',\n        event_record_id: eventRecordId\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "split_guides",
+      "name": "Split Guides",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 3,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "condition_1",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "filter_empty",
+      "name": "Filter Empty",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1776,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "apphvuFCMeHnhTR2a",
+          "mode": "list",
+          "cachedResultName": "Surfbreak PXM Retreats",
+          "cachedResultUrl": "https://airtable.com/apphvuFCMeHnhTR2a"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblxqCnVvwWYdORo8",
+          "mode": "list",
+          "cachedResultName": "Retreat Centers",
+          "cachedResultUrl": "https://airtable.com/apphvuFCMeHnhTR2a/tblxqCnVvwWYdORo8"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "center_id": "={{ $json.center_id }}",
+            "organizer_name": "={{ $json.organizer_name }}",
+            "phone": "={{ $json.phone }}",
+            "email": "={{ $json.email }}",
+            "website": "={{ $json.website }}",
+            "instagram": "={{ $json.instagram }}",
+            "facebook": "={{ $json.facebook }}",
+            "linkedin": "={{ $json.linkedin }}",
+            "twitter": "={{ $json.twitter }}",
+            "youtube": "={{ $json.youtube }}",
+            "tiktok": "={{ $json.tiktok }}",
+            "google_business_name": "={{ $json.google_business_name }}",
+            "google_address": "={{ $json.google_address }}",
+            "google_rating": "={{ $json.google_rating }}",
+            "google_reviews": "={{ $json.google_reviews }}",
+            "google_maps_url": "={{ $json.google_maps_url }}",
+            "latitude": "={{ $json.latitude }}",
+            "longitude": "={{ $json.longitude }}",
+            "distance_to_surfbreak_miles": "={{ $json.distance_to_surfbreak_miles }}",
+            "ai_classification": "={{ $json.ai_classification }}",
+            "ai_confidence": "={{ $json.ai_confidence }}",
+            "profile_summary": "={{ $json.profile_summary }}",
+            "website_analysis": "={{ $json.website_analysis }}",
+            "outreach_talking_points": "={{ $json.outreach_talking_points }}",
+            "fit_reasoning": "={{ $json.fit_reasoning }}",
+            "ai_red_flags": "={{ $json.ai_red_flags }}",
+            "ai_green_flags": "={{ $json.ai_green_flags }}",
+            "priority_score": "={{ $json.priority_score }}",
+            "lead_type": "={{ $json.lead_type }}",
+            "retreat_count": "={{ $json.retreat_count }}",
+            "unique_locations": "={{ $json.unique_locations }}",
+            "is_traveling_facilitator": "={{ $json.is_traveling_facilitator }}",
+            "is_multi_platform": "={{ $json.is_multi_platform }}"
+          },
+          "matchingColumns": [
+            "center_id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "organizer_name",
+              "displayName": "organizer_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "center_id",
+              "displayName": "center_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "instagram",
+              "displayName": "instagram",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "facebook",
+              "displayName": "facebook",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linkedin",
+              "displayName": "linkedin",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "twitter",
+              "displayName": "twitter",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "youtube",
+              "displayName": "youtube",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "tiktok",
+              "displayName": "tiktok",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "google_business_name",
+              "displayName": "google_business_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "google_address",
+              "displayName": "google_address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "google_rating",
+              "displayName": "google_rating",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "google_reviews",
+              "displayName": "google_reviews",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "google_maps_url",
+              "displayName": "google_maps_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "latitude",
+              "displayName": "latitude",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "longitude",
+              "displayName": "longitude",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "distance_to_surfbreak_miles",
+              "displayName": "distance_to_surfbreak_miles",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "ai_classification",
+              "displayName": "ai_classification",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "FACILITATOR",
+                  "value": "FACILITATOR"
+                },
+                {
+                  "name": "VENUE_OWNER",
+                  "value": "VENUE_OWNER"
+                },
+                {
+                  "name": "UNCLEAR",
+                  "value": "UNCLEAR"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "ai_confidence",
+              "displayName": "ai_confidence",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "profile_summary",
+              "displayName": "profile_summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "website_analysis",
+              "displayName": "website_analysis",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outreach_talking_points",
+              "displayName": "outreach_talking_points",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "fit_reasoning",
+              "displayName": "fit_reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "ai_red_flags",
+              "displayName": "ai_red_flags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "ai_green_flags",
+              "displayName": "ai_green_flags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "priority_score",
+              "displayName": "priority_score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "TRAVELING_FACILITATOR",
+                  "value": "TRAVELING_FACILITATOR"
+                },
+                {
+                  "name": "FACILITATOR",
+                  "value": "FACILITATOR"
+                },
+                {
+                  "name": "VENUE_OWNER",
+                  "value": "VENUE_OWNER"
+                },
+                {
+                  "name": "UNKNOWN",
+                  "value": "UNKNOWN"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "retreat_count",
+              "displayName": "retreat_count",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "unique_locations",
+              "displayName": "unique_locations",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "is_traveling_facilitator",
+              "displayName": "is_traveling_facilitator",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "is_multi_platform",
+              "displayName": "is_multi_platform",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outreach_status",
+              "displayName": "outreach_status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Not Started",
+                  "value": "Not Started"
+                },
+                {
+                  "name": "Researching",
+                  "value": "Researching"
+                },
+                {
+                  "name": "Ready to Contact",
+                  "value": "Ready to Contact"
+                },
+                {
+                  "name": "Contacted - Email",
+                  "value": "Contacted - Email"
+                },
+                {
+                  "name": "Contacted - DM",
+                  "value": "Contacted - DM"
+                },
+                {
+                  "name": "Contacted - Phone",
+                  "value": "Contacted - Phone"
+                },
+                {
+                  "name": "Follow-up Needed",
+                  "value": "Follow-up Needed"
+                },
+                {
+                  "name": "In Conversation",
+                  "value": "In Conversation"
+                },
+                {
+                  "name": "Call Scheduled",
+                  "value": "Call Scheduled"
+                },
+                {
+                  "name": "Tour Scheduled",
+                  "value": "Tour Scheduled"
+                },
+                {
+                  "name": "Proposal Sent",
+                  "value": "Proposal Sent"
+                },
+                {
+                  "name": "Negotiating",
+                  "value": "Negotiating"
+                },
+                {
+                  "name": "Won - Booked",
+                  "value": "Won - Booked"
+                },
+                {
+                  "name": "Lost - Not Interested",
+                  "value": "Lost - Not Interested"
+                },
+                {
+                  "name": "Lost - Wrong Fit",
+                  "value": "Lost - Wrong Fit"
+                },
+                {
+                  "name": "Lost - No Response",
+                  "value": "Lost - No Response"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "contact_priority",
+              "displayName": "contact_priority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Hot",
+                  "value": "Hot"
+                },
+                {
+                  "name": "Warm",
+                  "value": "Warm"
+                },
+                {
+                  "name": "Cold",
+                  "value": "Cold"
+                },
+                {
+                  "name": "Do Not Contact",
+                  "value": "Do Not Contact"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "first_contact_date",
+              "displayName": "first_contact_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "last_contact_date",
+              "displayName": "last_contact_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "next_follow_up_date",
+              "displayName": "next_follow_up_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "contact_log",
+              "displayName": "contact_log",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linked_record_retreat_events",
+              "displayName": "linked_record_retreat_events",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linked_record_retreat_guides",
+              "displayName": "linked_record_retreat_guides",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "id": "upsert_center",
+      "name": "retreat_centers - Upsert Center",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1152,
+        192
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "r0zA2DAmqtg0RZCt",
+          "name": "Airtable - RomAIx Personal Access Token (info@romaix.ai)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "apphvuFCMeHnhTR2a",
+          "mode": "list",
+          "cachedResultName": "Surfbreak PXM Retreats"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblzjxIGyFSoC8nXp",
+          "mode": "list",
+          "cachedResultName": "Retreat Events"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "title": "={{ $json.title }}",
+            "dates": "=",
+            "price": "={{ $json.price }}",
+            "location_city": "={{ $json.location_city }}",
+            "detailed_address": "={{ $json.detailed_address }}",
+            "event_url": "={{ $json.event_url }}",
+            "center_url": "={{ $json.center_url }}",
+            "retreat_description": "={{ $json.retreat_description }}",
+            "group_size": "={{ $json.group_size }}",
+            "rating": "={{ $json.rating }}",
+            "source_platform": "={{ $json.source_platform }}",
+            "source_label": "={{ $json.source_label }}",
+            "scrape_description": "={{ $json.scrape_description }}",
+            "scrape_date": "={{ $json.scrape_date }}",
+            "source_url": "={{ $json.source_url }}",
+            "linked_record_retreat_centers": "={{ [$json.id] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "event_id",
+              "displayName": "event_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "dates",
+              "displayName": "dates",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "location_city",
+              "displayName": "location_city",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "detailed_address",
+              "displayName": "detailed_address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event_url",
+              "displayName": "event_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "center_url",
+              "displayName": "center_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "retreat_description",
+              "displayName": "retreat_description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "group_size",
+              "displayName": "group_size",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "rating",
+              "displayName": "rating",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source_platform",
+              "displayName": "source_platform",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "retreat.guru",
+                  "value": "retreat.guru"
+                },
+                {
+                  "name": "bookretreats.com",
+                  "value": "bookretreats.com"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source_label",
+              "displayName": "source_label",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "scrape_description",
+              "displayName": "scrape_description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "scrape_date",
+              "displayName": "scrape_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linked_record_retreat_centers",
+              "displayName": "linked_record_retreat_centers",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linked_record_retreat_guides",
+              "displayName": "linked_record_retreat_guides",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "id": "create_event",
+      "name": "retreat_events - Create Event",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1152,
+        608
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "r0zA2DAmqtg0RZCt",
+          "name": "Airtable - RomAIx Personal Access Token (info@romaix.ai)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "apphvuFCMeHnhTR2a",
+          "mode": "list",
+          "cachedResultName": "Surfbreak PXM Retreats",
+          "cachedResultUrl": "https://airtable.com/apphvuFCMeHnhTR2a"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblHbcnUJZxaE6oeS",
+          "mode": "list",
+          "cachedResultName": "Retreat Guides",
+          "cachedResultUrl": "https://airtable.com/apphvuFCMeHnhTR2a/tblHbcnUJZxaE6oeS"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "guide_id": "={{ $json.guide_id }}",
+            "name": "={{ $json.name }}",
+            "role": "={{ $json.role }}",
+            "bio": "={{ $json.bio }}",
+            "photo_url": "={{ $json.photo_url }}",
+            "profile_url": "={{ $json.profile_url }}",
+            "credentials": "={{ $json.credentials }}",
+            "linked_record_retreat_events": "={{ [$json.event_record_id] }}"
+          },
+          "matchingColumns": [
+            "guide_id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "guide_id",
+              "displayName": "guide_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "role",
+              "displayName": "role",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Guide",
+                  "value": "Guide"
+                },
+                {
+                  "name": "Facilitator",
+                  "value": "Facilitator"
+                },
+                {
+                  "name": "Instructor",
+                  "value": "Instructor"
+                },
+                {
+                  "name": "Teacher",
+                  "value": "Teacher"
+                },
+                {
+                  "name": "Host",
+                  "value": "Host"
+                },
+                {
+                  "name": "Founder",
+                  "value": "Founder"
+                },
+                {
+                  "name": "Co-Founder",
+                  "value": "Co-Founder"
+                },
+                {
+                  "name": "Lead Teacher",
+                  "value": "Lead Teacher"
+                },
+                {
+                  "name": "Assistant Teacher",
+                  "value": "Assistant Teacher"
+                },
+                {
+                  "name": "Guest Teacher",
+                  "value": "Guest Teacher"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "bio",
+              "displayName": "bio",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "photo_url",
+              "displayName": "photo_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "profile_url",
+              "displayName": "profile_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "credentials",
+              "displayName": "credentials",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linked_record_retreat_centers",
+              "displayName": "linked_record_retreat_centers",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "linked_record_retreat_events",
+              "displayName": "linked_record_retreat_events",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "array",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "id": "upsert_guide",
+      "name": "retreat_guides - Upsert Guide",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        208
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "r0zA2DAmqtg0RZCt",
+          "name": "Airtable - RomAIx Personal Access Token (info@romaix.ai)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "formTitle": "Upload Surfbreak Retreats",
+        "formFields": {
+          "values": [
+            {
+              "fieldName": "CSV File",
+              "fieldLabel": "Upload the CSV",
+              "fieldType": "file",
+              "acceptFileTypes": ".csv"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.4,
+      "position": [
+        272,
+        304
+      ],
+      "id": "3a7a438e-3d52-4253-b5c1-399a9d5b8e25",
+      "name": "On form submission",
+      "webhookId": "f32ec7f7-8bfc-455f-9b06-e3be93a8be7e"
+    },
+    {
+      "parameters": {
+        "maxItems": 20
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        672,
+        304
+      ],
+      "id": "2fc7aca5-9213-48f9-a4ae-3ebdbbf6dad7",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "errorMessage": "Workflow Stopped"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1984,
+        400
+      ],
+      "id": "34d7f5d4-7241-4adc-abad-8d9cefaae6ea",
+      "name": "Stop and Error"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1392,
+        336
+      ],
+      "id": "9ae81c42-2aa7-4832-bb53-f49cb454cb62",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {
+    "On form submission": [
+      {
+        "json": {
+          "CSV File": [
+            {
+              "filename": "Surfbreak PXM Leads - B0003.csv",
+              "mimetype": "text/csv",
+              "size": 705690
+            }
+          ],
+          "submittedAt": "2026-01-04T18:24:48.054+01:00",
+          "formMode": "test"
+        },
+        "binary": {
+          "CSV_File": {
+            "mimeType": "text/csv",
+            "fileType": "text",
+            "fileExtension": "csv",
+            "data": "filesystem-v2",
+            "fileName": "Surfbreak PXM Leads - B0003.csv",
+            "id": "filesystem-v2:workflows/hYJUmSTBISP9dzTn/executions/temp/binary_data/7599654b-6b9b-4bbb-bfcd-83b1ec14c640",
+            "fileSize": "706 kB"
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        []
+      ]
+    },
+    "Read CSV": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Data": {
+      "0": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "0",
+            "index": 0
+          }
+        ]
+      ],
+      "main": [
+        [
+          {
+            "node": "retreat_centers - Upsert Center",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "retreat_events - Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Guides": {
+      "main": [
+        [
+          {
+            "node": "Filter Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Empty": {
+      "main": [
+        [
+          {
+            "node": "retreat_guides - Upsert Guide",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retreat_centers - Upsert Center": {
+      "0": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "1",
+            "index": 0
+          }
+        ]
+      ],
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retreat_events - Create Event": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Read CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Process Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Split Guides",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "49701e4f-8eef-406f-9812-f2c97e409d47",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "65c5fc849bd0987404448fe5b36b45b187ec0b7797dfc130ff09763ad4babbe9"
+  },
+  "id": "hYJUmSTBISP9dzTn",
+  "tags": []
+}

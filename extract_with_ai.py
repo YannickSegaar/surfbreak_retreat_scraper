@@ -180,6 +180,8 @@ def extract_relevant_sections(html: str, platform: str = "retreat.guru") -> str:
     size_patterns = [
         r'(?:group|retreat)\s*size[:\s]+(\d+)',
         r'(?:up\s+to|maximum|max)[:\s]+(\d+)\s*(?:people|participants|guests)',
+        r'up\s+to\s+(\d+)\s+in\s+group',  # "Up to 7 in group" (retreat.guru format)
+        r'(\d+)\s+in\s+group',  # "7 in group"
         r'(\d+)\s*(?:people|participants|guests)\s*(?:max|maximum)',
         r'capacity[:\s]+(\d+)',
     ]
