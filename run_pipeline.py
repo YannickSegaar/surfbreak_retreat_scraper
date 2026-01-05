@@ -381,14 +381,39 @@ async def run_pipeline(search_url: str, source_label: str = None):
                 guides_df.to_csv("guides_scraped.csv", index=False, encoding="utf-8")
                 print(f"✓ Saved {len(guides)} guides to guides_scraped.csv")
 
-    # Step 3: Google Places enrichment
+    # Step 3: Google Places enrichment (CENTER-BASED - more efficient!)
+    # Enrich centers first, then propagate to leads
     if google_api_key:
         print("\n" + "=" * 70)
-        print("STEP 3: Google Places API Enrichment")
+        print("STEP 3: Google Places API Enrichment (CENTER-BASED)")
         print("=" * 70)
+        print("Enriching centers instead of individual leads (saves ~44% API calls)")
 
-        from enrich_google import enrich_leads_with_google
-        await enrich_leads_with_google("leads_enriched.csv", "leads_google_enriched.csv")
+        from enrich_centers_google import enrich_centers_with_google, propagate_center_enrichment_to_leads
+
+        # Step 3a: Enrich centers with Google Places data
+        centers_enriched = await enrich_centers_with_google(
+            input_file="centers_scraped.csv",
+            output_file="centers_enriched.csv"
+        )
+
+        # Step 3b: Propagate center enrichment to leads
+        if centers_enriched:
+            propagate_center_enrichment_to_leads(
+                centers_file="centers_enriched.csv",
+                leads_file="leads_enriched.csv",
+                output_file="leads_google_enriched.csv"
+            )
+
+            # Update centers_scraped.csv with enrichment data for Airtable import
+            if Path("centers_enriched.csv").exists():
+                Path("centers_enriched.csv").replace("centers_scraped.csv")
+                print("✓ Updated centers_scraped.csv with Google enrichment data")
+        else:
+            # Fallback: copy leads without Google enrichment
+            df = pd.read_csv("leads_enriched.csv")
+            df.to_csv("leads_google_enriched.csv", index=False, encoding="utf-8")
+            print("⚠ Center enrichment failed, continuing without Google data")
     else:
         print("\n" + "=" * 70)
         print("STEP 3: SKIPPED (no API key)")
