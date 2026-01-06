@@ -1,526 +1,507 @@
-# Surfbreak Lead Generation System - Client Guide
+# Surfbreak PXM Lead Generation System
+## Client Guide
 
-## What This System Does
+---
 
-This system automatically finds retreat facilitators who might want to host their retreats at Surfbreak PXM. It searches popular retreat booking websites, gathers contact information, and uses AI to identify which leads are most likely to become your clients.
+## What We Built For You
 
-**The key insight:** Most retreat listings online are from venue owners (your competitors), not the facilitators who actually rent venues. This system is specifically designed to filter out competitors and surface the ~20-30% of leads who are traveling facilitators - your ideal prospects.
+This system is a comprehensive lead generation engine specifically designed for Surfbreak PXM. We've built a sophisticated data pipeline that:
+
+- **Scrapes** retreat listings from the two largest retreat booking platforms
+- **Extracts** organizer and facilitator information from multiple sources
+- **Enriches** leads with verified contact data from Google Maps
+- **Analyzes** each prospect using AI to determine fit
+- **Prioritizes** leads so you know exactly who to contact first
+
+The result: **A ready-to-use Airtable database** with hundreds of qualified leads, complete with contact information, AI-generated talking points, and prioritization scores.
 
 ---
 
 ## Table of Contents
 
-1. [The Problem We're Solving](#the-problem-were-solving)
-2. [How It Works (Step by Step)](#how-it-works-step-by-step)
-3. [Understanding Your Leads](#understanding-your-leads)
-4. [Using Airtable](#using-airtable)
-5. [Managing Duplicate Leads](#managing-duplicate-leads)
-6. [Sales Workflow & Lead Tracking](#sales-workflow--lead-tracking)
-7. [Recommended Additional Fields](#recommended-additional-fields)
-8. [Best Practices for Outreach](#best-practices-for-outreach)
+1. [The Data Collection Process](#the-data-collection-process)
+2. [The Challenge We Solved](#the-challenge-we-solved)
+3. [Important Notes & Disclaimers](#important-notes--disclaimers)
+4. [Your Airtable Database](#your-airtable-database)
+5. [How to Use This for Sales](#how-to-use-this-for-sales)
+6. [Getting Started Checklist](#getting-started-checklist)
 
 ---
 
-## The Problem We're Solving
+## The Data Collection Process
 
-### The Challenge
+Here's how we gathered and enriched your leads, step by step:
 
-When you search retreat websites like retreat.guru or bookretreats.com, you'll find hundreds of retreat listings. But here's the problem:
+### Step 1: Search URL Configuration
 
-- **~70% are venue owners** - These are retreat centers that own their property. They're your competitors, not prospects.
-- **~30% are traveling facilitators** - These are yoga teachers, wellness coaches, and meditation guides who rent venues to host their retreats. These are your ideal clients.
+We configured searches on both major retreat booking platforms:
 
-Manually going through hundreds of listings to figure out who owns a venue versus who rents venues would take days. This system does it automatically.
+| Platform | What We Searched |
+|----------|------------------|
+| **retreat.guru** | Yoga, meditation, wellness, and psychedelic retreats in Mexico, Costa Rica, Guatemala, Peru, Colombia, and United States |
+| **BookRetreats.com** | Similar retreat types across the same geographic areas |
 
-### The Solution
+These searches were designed to capture facilitators who might be interested in hosting at Surfbreak PXM in Puerto Escondido.
 
-Our system:
-1. Automatically scrapes retreat listings from multiple websites
-2. Finds contact information (phone, email, social media)
-3. Uses AI to analyze each lead and determine if they're a facilitator or venue owner
-4. Calculates how far each lead's current retreats are from Surfbreak
-5. Scores and prioritizes leads so you know exactly who to contact first
+### Step 2: Retreat Event Extraction
 
----
+From each search, we extracted all retreat listings including:
+- Retreat title and description
+- Date ranges and pricing
+- Location and venue information
+- Direct links to the listing pages
+- Ratings and reviews
 
-## How It Works (Step by Step)
+### Step 3: Center/Organizer Pages
 
-### Step 1: Finding Retreat Listings
+For each retreat event, we navigated to the organizer's profile page to extract:
+- Organization/center name
+- Full address and location details
+- Profile descriptions
+- Existing Google Maps links
 
-The system visits retreat booking websites and collects information about every retreat listing:
-- **Retreat name** - What the retreat is called
-- **Organizer name** - Who is running the retreat
-- **Location** - Where the retreat takes place
-- **Dates and pricing** - When it runs and how much it costs
-- **Links** - Direct links to the listings
+### Step 4: Guide/Facilitator Extraction
 
-**Why multiple websites?** By searching both retreat.guru and bookretreats.com, we can:
-- Find more leads overall
-- Identify organizers who appear on multiple platforms (more established)
-- Cross-reference the same organizer across sites
+We identified individual teachers and facilitators from retreat pages:
+- Guide names and roles
+- Bios and credentials
+- Profile photos
+- Ratings and review counts
 
-### Step 2: Finding Contact Information
+### Step 5: Google Maps Enrichment
 
-For each organizer found, the system searches Google to find:
-- **Phone number** - Direct business phone
-- **Website** - Their official website
-- **Google Maps listing** - Verified business information
-- **GPS coordinates** - For distance calculations
+We searched Google Places API for each center to obtain verified contact information:
 
-### Step 3: Scraping Websites for More Contacts
+| Data Point | Description |
+|------------|-------------|
+| Phone Number | Business phone from Google |
+| Website URL | Official website |
+| Google Maps Link | Verified location |
+| GPS Coordinates | For distance calculations |
+| Rating & Reviews | Google business ratings |
+| Distance to Surfbreak | Calculated in miles from Puerto Escondido |
 
-The system visits each organizer's website and looks for:
-- **Email addresses** - Contact emails, booking emails
-- **Social media links** - Instagram, Facebook, LinkedIn, Twitter, YouTube, TikTok
+### Step 6: Website Scraping
 
-This gives you multiple ways to reach each prospect.
+For centers with websites, we scraped their sites to find:
+- Email addresses (contact forms, mailto links)
+- Social media profiles (Instagram, Facebook, LinkedIn, Twitter, YouTube, TikTok)
+- Additional contact information
 
-### Step 4: AI Analysis
+### Step 7: AI Analysis
 
-This is where the magic happens. For each lead, our AI:
+This is where the real magic happens. For each center, our AI system:
 
-**Analyzes their website deeply:**
-- Reads their homepage, about page, team page, and services
-- Looks for signs they own a venue (room bookings, accommodation details)
-- Looks for signs they're a traveling facilitator (teaching at multiple locations)
+**Analyzed their online presence** by reading their website content, retreat descriptions, and profile information.
 
-**Generates a classification:**
-- **FACILITATOR** - They rent venues, they're a prospect
-- **VENUE_OWNER** - They own their venue, they're a competitor
+**Classified the lead** into one of three categories:
+- **FACILITATOR** - They rent venues to host retreats (your prospects)
+- **VENUE_OWNER** - They own their own venue (your competitors)
 - **UNCLEAR** - Needs manual review
 
-**Creates a profile summary:**
-A 2-3 sentence description of who they are, what they do, and their style.
+**Generated a profile summary** - A 2-3 sentence description of who they are and what they do.
 
-**Generates outreach talking points:**
-Three personalized conversation starters based on their specific retreats and style.
+**Created outreach talking points** - Three personalized conversation starters specific to each lead.
 
-**Explains the fit:**
-Why they would or wouldn't be a good fit for Surfbreak.
+**Identified fit reasoning** - Why they would or wouldn't be a good match for Surfbreak.
 
-**Identifies signals:**
-- Green flags (positive indicators)
-- Red flags (concerns to watch for)
+**Flagged signals** - Green flags (positive indicators) and red flags (concerns).
 
-### Step 5: Distance Calculation
+---
 
-The system calculates how far each lead's current retreat location is from Surfbreak PXM in Puerto Escondido. This helps you understand:
-- Are they already hosting retreats nearby? (Easy logistics for them)
-- Are they far away? (Might need more convincing about the location)
+## The Challenge We Solved
 
-### Step 6: Scoring and Prioritization
+### The Problem with Retreat Listings
 
-Each lead gets a **priority score from 0-100** based on:
+When you search retreat websites, you'll find hundreds of listings. But here's the challenge:
 
-| Factor | Impact |
+| Lead Type | Percentage | What They Are |
+|-----------|------------|---------------|
+| Venue Owners | ~70% | Centers that own their property - your **competitors** |
+| Facilitators | ~30% | Teachers who rent venues - your **prospects** |
+
+Manually sorting through hundreds of listings to determine who owns a venue versus who rents venues would take days of research.
+
+### Our Solution
+
+The AI classification system automatically identifies which leads are most likely to rent your venue:
+
+1. **TRAVELING_FACILITATOR** - Hosts retreats at multiple different locations. These are your **best prospects** - they definitely rent venues!
+
+2. **FACILITATOR** - AI analysis indicates they rent venues rather than own them. **Great prospects**.
+
+3. **VENUE_OWNER** - Owns their own property. Still potentially useful as:
+   - Networking contacts
+   - Referral sources (they may know facilitators)
+   - Future partnerships
+
+4. **UNCLEAR** - Worth a quick manual review
+
+### Priority Scoring
+
+Each lead receives a score from 0-100 based on multiple factors:
+
+| Factor | Points |
 |--------|--------|
-| Hosts at multiple different locations | +30 points (strongest signal they rent venues!) |
-| AI classified as FACILITATOR | +25 points (scaled by confidence) |
-| Appears on multiple platforms | +10 points (more established) |
-| Has 3+ retreats listed | +10 points (very active) |
-| AI classified as VENUE_OWNER | -30 points (competitor) |
+| Hosts at multiple locations | +30 |
+| AI classified as FACILITATOR | +25 |
+| Appears on multiple platforms | +10 |
+| Has 3+ retreats listed | +10 |
+| AI classified as VENUE_OWNER | -30 |
 
-**Score interpretation:**
-- **70-100:** Contact immediately - high likelihood they rent venues
-- **50-69:** Worth reaching out - decent prospect
-- **Below 50:** Likely a competitor - skip unless you have time
-
-### Step 7: Final Classification
-
-Each lead is assigned a **lead type**:
-
-| Type | What it means | Priority |
-|------|---------------|----------|
-| **TRAVELING_FACILITATOR** | Hosts retreats at 2+ different locations. Best prospects! | Highest |
-| **FACILITATOR** | AI confirms they're a facilitator who rents venues | High |
-| **UNKNOWN** | Can't determine - worth investigating | Medium |
-| **VENUE_OWNER** | Owns their own venue - competitor | Low (skip) |
+**What the scores mean:**
+- **70-100**: Contact immediately - excellent prospects
+- **50-69**: Worth reaching out - good potential
+- **Below 50**: Likely competitors - lower priority
 
 ---
 
-## Understanding Your Leads
+## Important Notes & Disclaimers
 
-### Key Fields Explained
+### Google Maps Matching
 
-**Identification:**
-- `unique_id` - A code that identifies each organizer. Same code = same organizer (even across different platforms)
-- `source_platform` - Which website the lead came from (retreat.guru or bookretreats.com)
-- `source_label` - Which search batch this came from (e.g., "yoga-mexico")
+The Google Places API searches for businesses by name and location. In some cases:
+- The exact business may not be found
+- A similarly-named business might be returned
+- Contact information may be for a different entity
 
-**Contact Information:**
-- `phone` - Business phone number
-- `email` - Email address(es) found
-- `website` - Their website URL
-- `instagram`, `facebook`, etc. - Social media profiles
+**Recommendation:** Always verify contact information before reaching out, especially for high-priority leads.
 
-**AI Analysis:**
-- `ai_classification` - FACILITATOR, VENUE_OWNER, or UNCLEAR
-- `ai_confidence` - How sure the AI is (0-100%)
-- `profile_summary` - Who they are in 2-3 sentences
-- `outreach_talking_points` - Ready-to-use conversation starters
-- `fit_reasoning` - Why they're a good/bad fit for Surfbreak
+### Web Scraping Limitations
 
-**Scoring:**
-- `priority_score` - Overall score (0-100), higher = better prospect
-- `lead_type` - Final classification
-- `retreat_count` - How many retreats they have listed
-- `unique_locations` - How many different places they host retreats
-- `is_traveling_facilitator` - TRUE if they host at 2+ locations
+Website scraping extracts data based on each site's structure at the time of scraping:
+- If websites have been redesigned, some data may be missing
+- Social media links and emails depend on where sites display them
+- Not all websites publicly display contact information
 
----
+**Recommendation:** For high-priority leads with missing contact info, a quick manual search can often fill in gaps.
 
-## Using Airtable
+### AI Classification Accuracy
 
-### Three-Table Structure (Recommended)
+The AI classification system is highly accurate but not perfect:
+- Some venue owners may be misclassified as facilitators
+- Some facilitators may appear as unclear
+- Always check the `ai_confidence` score - higher is better
 
-For best results, we recommend a three-table Airtable structure with linked records:
+**Recommendation:** For leads with confidence below 70%, consider a quick manual review before investing significant outreach time.
 
-| Table | Purpose | Records |
-|-------|---------|---------|
-| **Retreat Centers** | Your main CRM - unique organizers/facilitators | One record per organizer |
-| **Retreat Events** | Individual retreat listings | All scraped events |
-| **Retreat Guides** | Facilitators who lead retreats | Deduplicated guides |
+### Data Freshness
 
-**Benefits:**
-- **No duplicate organizers** - Even if someone has 10 retreats, they appear once in Centers
-- **Linked records** - Click a center to see all their events and guides
-- **Better sales workflow** - Focus on Centers table for outreach
-- **Guide tracking** - See which facilitators work with which organizers
+This data was scraped at a specific point in time:
+- Retreat dates and pricing may change
+- Contact information may become outdated
+- New retreats may have been added since scraping
 
-### Option 1: Automated Import via n8n (Recommended)
-
-Use the n8n workflow to automatically:
-1. Create/update Center records (deduplicated by organizer)
-2. Create Event records linked to Centers
-3. Create/update Guide records linked to Events
-
-See `AIRTABLE_N8N_SETUP.md` for complete setup instructions and Airtable AI prompts.
-
-### Option 2: Simple Single-Table Import
-
-If you prefer simplicity, import `leads_analyzed.csv` directly:
-
-1. Open Airtable and create a new base
-2. Use the Airtable AI assistant with the setup prompt (in DOCUMENTATION.md)
-3. Import the `leads_analyzed.csv` file
-4. The fields will automatically map to the correct columns
-
-**Pre-configured views:**
-
-1. **All Leads** - Everything, sorted by priority score
-2. **High Priority (70+)** - Your best prospects to contact first
-3. **Traveling Facilitators** - The absolute best prospects (host at multiple locations)
-4. **Facilitators** - All likely facilitators
-5. **Venue Owners (Skip)** - Competitors to avoid
-6. **Needs Review** - Unclear leads that need manual review
-7. **By Platform** - Grouped by source website
+**Recommendation:** When contacting leads, verify current information from their profiles.
 
 ---
 
-## Managing Duplicate Leads
+## Your Airtable Database
 
-### Why There Are Duplicates
+### Table Overview
 
-You'll see the same organizer appearing multiple times because:
+Your database contains three interconnected tables:
 
-1. **Multiple retreats** - One organizer might have 5 different retreats listed
-2. **Multiple platforms** - The same organizer might be on both retreat.guru AND bookretreats.com
-3. **Multiple search batches** - If you ran searches for "yoga" and "meditation", the same organizer might appear in both
+| Table | Purpose | What It Contains |
+|-------|---------|------------------|
+| **Centers** | Your main leads table | Organizations and facilitators who run retreats |
+| **Events** | Individual retreat listings | All retreat events we scraped |
+| **Guides** | Teachers/facilitators | Individual people who lead retreats |
 
-### How to Identify Duplicates
+### How the Tables Connect
 
-**Look at the `unique_id` field.** Every row with the same `unique_id` is the same organizer.
+```
+                    ┌─────────────────┐
+                    │     EVENTS      │
+                    │  (478 records)  │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              │              ▼
+    ┌─────────────────┐      │    ┌─────────────────┐
+    │     CENTERS     │◄─────┘    │     GUIDES      │
+    │  (265 records)  │           │  (492 records)  │
+    └─────────────────┘           └─────────────────┘
+```
 
-For example:
-| unique_id | organizer | title | source_platform |
-|-----------|-----------|-------|-----------------|
-| a1b2c3d4e5f6 | Sarah's Yoga | Beach Yoga Retreat | retreat.guru |
-| a1b2c3d4e5f6 | Sarah's Yoga | Mountain Meditation | retreat.guru |
-| a1b2c3d4e5f6 | Sarah's Yoga | Bali Transformation | bookretreats.com |
+**Relationships:**
+- Each **Event** links to one **Center** (the organization running it)
+- Each **Event** links to one or more **Guides** (the facilitators leading it)
+- **Guides** link back to **Centers** they're affiliated with
 
-All three rows are the SAME organizer (Sarah's Yoga) - she just has multiple retreats.
-
-### Handling Duplicates in Airtable
-
-**Option 1: Group by unique_id (Recommended for outreach)**
-
-Create a view that groups by `unique_id`. This way you see each organizer once, with all their retreats grouped together.
-
-**Option 2: Use the data for context**
-
-Don't delete duplicates! They give you valuable information:
-- How many retreats does this organizer run? (more = more active)
-- What types of retreats do they offer? (yoga, meditation, wellness?)
-- What locations do they use? (If multiple, they're a traveling facilitator!)
-
-**Option 3: Create a "Unique Organizers" view**
-
-In Airtable, create a view that:
-1. Groups by `unique_id`
-2. Shows only the first record in each group
-3. Displays `retreat_count` to show how many retreats they have
-
-### Important Note on Scoring
-
-The scoring system already accounts for duplicates:
-- `retreat_count` tells you how many retreats this organizer has
-- `unique_locations` tells you how many different places they host
-- `is_traveling_facilitator` is TRUE if they host at 2+ locations
-
-So you get all the benefits of the duplicate data without having to manually analyze it.
+**Why this matters:** You can click on any Center and see all their events and guides. You can click on any Guide and see all the retreats they lead.
 
 ---
 
-## Sales Workflow & Lead Tracking
+### Centers Table - Field Reference
+
+This is your **primary leads table**. Focus here for outreach.
+
+#### Basic Information
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `center_id` | Text | Unique identifier for this center |
+| `name` | Text | Organization/center name |
+| `address` | Long Text | Full address |
+| `description` | Long Text | Center's description from their profile |
+| `center_url` | URL | Link to their profile on the source platform |
+
+#### Google Maps Data (Enriched)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `google_business_name` | Text | Verified business name from Google |
+| `google_address` | Text | Verified address from Google |
+| `google_maps_url` | URL | Direct link to Google Maps listing |
+| `google_rating` | Number | Google rating (1-5 stars) |
+| `google_reviews` | Number | Number of Google reviews |
+| `latitude` | Number | GPS latitude coordinate |
+| `longitude` | Number | GPS longitude coordinate |
+| `distance_to_surfbreak_miles` | Number | Distance from Puerto Escondido |
+
+#### Contact Information
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `phone` | Phone | Business phone number |
+| `email` | Email | Email address |
+| `website` | URL | Official website |
+| `instagram` | URL | Instagram profile |
+| `facebook` | URL | Facebook page |
+| `linkedin` | URL | LinkedIn profile |
+| `twitter` | URL | Twitter/X profile |
+| `youtube` | URL | YouTube channel |
+| `tiktok` | URL | TikTok profile |
+
+#### AI Analysis
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ai_classification` | Select | FACILITATOR, VENUE_OWNER, or UNCLEAR |
+| `ai_confidence` | Number | Confidence score (0-100) |
+| `profile_summary` | Long Text | 2-3 sentence summary of who they are |
+| `website_analysis` | Long Text | Analysis of their website content |
+| `outreach_talking_points` | Long Text | Ready-to-use conversation starters |
+| `fit_reasoning` | Long Text | Why they're a good/bad fit for Surfbreak |
+| `ai_red_flags` | Long Text | Concerns to watch for |
+| `ai_green_flags` | Long Text | Positive indicators |
+
+#### Sales Tracking (CRM Fields)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `contact_status` | Select | Not Contacted, Email Sent, Responded, etc. |
+| `is_good_prospect` | Checkbox | Mark as good prospect |
+| `is_disqualified` | Checkbox | Mark as disqualified |
+| `priority_level` | Select | High, Medium, Low |
+| `last_contact_date` | Date | When you last reached out |
+| `next_follow_up_date` | Date | When to follow up |
+| `outreach_notes` | Long Text | Your notes on this lead |
+| `contact_person` | Text | Specific person to contact |
+| `contact_person_email` | Email | Their email |
+| `contact_person_phone` | Phone | Their phone |
+
+#### Linked Records
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `retreat_events3` | Linked | Events run by this center |
+| `retreat_guides3` | Linked | Guides affiliated with this center |
+| `event_count` | Count | Number of events |
+| `guide_count` | Count | Number of guides |
+
+---
+
+### Events Table - Field Reference
+
+Individual retreat listings. Use this to understand what types of retreats each center offers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_id` | Text | Unique identifier |
+| `title` | Text | Retreat title |
+| `dates` | Text | Date range |
+| `price` | Text | Pricing information |
+| `event_url` | URL | Link to the retreat listing |
+| `event_rating` | Number | Rating (1-5 stars) |
+| `event_review_count` | Number | Number of reviews |
+| `retreat_description` | Long Text | Full retreat description |
+| `group_size` | Number | Maximum group size |
+| `location_city` | Text | City/location |
+| `source_platform` | Select | retreat.guru or bookretreats.com |
+| `source_label` | Text | Search batch label |
+| `scrape_date` | Date | When this was scraped |
+| `Center3` | Linked | Link to Center record |
+| `Guides3` | Linked | Links to Guide records |
+
+---
+
+### Guides Table - Field Reference
+
+Individual teachers and facilitators. Useful for identifying key people at each organization.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `teacher_id` | Text | Platform-specific ID |
+| `guide_id` | Text | Unique identifier |
+| `name` | Text | Guide's name |
+| `credentials` | Text | Certifications and qualifications |
+| `role` | Text | Role (Lead Teacher, Co-Facilitator, etc.) |
+| `bio` | Long Text | Biography |
+| `photo_url` | URL | Profile photo |
+| `profile_url` | URL | Link to their profile |
+| `rating` | Number | Rating (1-5) |
+| `review_count` | Number | Number of reviews |
+| `upcoming_retreats_count` | Number | Active retreats |
+| `url_slug` | Text | URL identifier for linking |
+| `retreat_events3` | Linked | Events they lead |
+| `retreat_centers3` | Linked | Centers they're affiliated with |
+
+---
+
+## How to Use This for Sales
 
 ### Recommended Workflow
 
-**Phase 1: Initial Review (Day 1)**
-1. Open the "High Priority (70+)" view
-2. Quickly scan through leads
-3. Mark any obvious non-fits for removal
+#### Phase 1: High-Priority Outreach (Week 1)
 
-**Phase 2: Research & Preparation (Day 1-2)**
-1. For each high-priority lead, read the `profile_summary`
-2. Review the `outreach_talking_points`
-3. Check their website and social media
-4. Note anything relevant in the Notes field
+1. **Filter Centers table** by `ai_classification` = FACILITATOR
+2. **Sort by** any priority indicators you prefer
+3. **Review each lead:**
+   - Read the `profile_summary` - Who are they?
+   - Check `outreach_talking_points` - What to say?
+   - Review `fit_reasoning` - Why are they a good fit?
+   - Note any `ai_red_flags` - Any concerns?
 
-**Phase 3: Outreach (Ongoing)**
-1. Send personalized outreach using the talking points
-2. Log your contact in Airtable
-3. Update the status as you progress
+4. **Personalize your outreach** using the AI-generated talking points
+5. **Update `contact_status`** after each contact attempt
 
-**Phase 4: Follow-up (Weekly)**
-1. Review leads in "Contacted" status
-2. Send follow-ups to non-responders
-3. Move responding leads through your pipeline
+#### Phase 2: Broader Outreach (Week 2-3)
 
----
+1. Move to leads with `ai_classification` = UNCLEAR
+2. Do a quick manual review of their website
+3. Reclassify as needed and proceed with outreach
 
-## Recommended Additional Fields
+#### Phase 3: Networking (Ongoing)
 
-Add these fields to Airtable for tracking your sales process:
+Even VENUE_OWNER leads can be valuable:
+- They may know facilitators looking for new venues
+- They could be referral partners
+- Industry networking opportunities
 
-### Status Tracking
+### Using the AI-Generated Content
 
-**`outreach_status`** - Single Select
-- `Not Started` - Haven't contacted yet
-- `Researching` - Gathering more info before contact
-- `Ready to Contact` - Prepared, ready to reach out
-- `Contacted - Email` - Sent initial email
-- `Contacted - DM` - Sent social media message
-- `Contacted - Phone` - Called them
-- `Follow-up Needed` - No response, need to follow up
-- `In Conversation` - They responded, talking
-- `Call Scheduled` - Have a call booked
-- `Tour Scheduled` - Coming to visit Surfbreak
-- `Proposal Sent` - Sent pricing/proposal
-- `Negotiating` - Discussing terms
-- `Won - Booked` - They booked!
-- `Lost - Not Interested` - They declined
-- `Lost - Wrong Fit` - Not actually a good fit
-- `Lost - No Response` - Never responded after multiple attempts
+**The `profile_summary` tells you:**
+- What type of retreats they run
+- Their style and approach
+- Their target audience
 
-**`contact_priority`** - Single Select
-- `Hot` - Contact today
-- `Warm` - Contact this week
-- `Cold` - Contact when time permits
-- `Do Not Contact` - Skip this lead
+**The `outreach_talking_points` give you:**
+- Three ready-to-use conversation starters
+- Specific references to their work
+- Angles for approaching them
 
-**`interest_level`** - Single Select (after contact)
-- `Very Interested` - Excited, asking questions
-- `Somewhat Interested` - Open but not urgent
-- `Maybe Later` - Not now, but possibly future
-- `Not Interested` - Declined
-- `Unknown` - Haven't determined yet
+**Example outreach (using the talking points):**
 
-### Date Tracking
+> "Hi [Name], I came across your [Retreat Name] retreat and was impressed by your focus on [specific element from their profile]. I run Surfbreak PXM in Puerto Escondido - we're a surf and wellness venue that regularly hosts traveling facilitators. Given your experience with [another specific element], I think your retreats could be a great fit for our space. Would you be open to a quick call to explore possibilities for 2025?"
 
-**`first_contact_date`** - Date
-When you first reached out
+### Tracking Your Progress
 
-**`last_contact_date`** - Date
-Most recent contact attempt
+Update these fields as you work:
 
-**`next_follow_up_date`** - Date
-When to follow up next
-
-**`booked_date`** - Date
-If they book, when is the retreat?
-
-### Notes & Communication
-
-**`notes`** - Long Text
-General notes about this lead, observations, research findings
-
-**`contact_log`** - Long Text
-Log of all contact attempts:
-```
-2024-01-15: Sent intro email to info@example.com
-2024-01-18: No response, sent follow-up
-2024-01-22: They replied! Interested in learning more
-2024-01-25: Had 20 min call, sending proposal
-```
-
-**`objections`** - Long Text
-Any concerns or objections they raised
-
-**`what_they_liked`** - Long Text
-What aspects of Surfbreak interested them
-
-### Assignment & Organization
-
-**`assigned_to`** - Collaborator
-Who is handling this lead (if multiple people on your team)
-
-**`lead_source_detail`** - Single Line Text
-Additional notes on where you found them
-
-**`tags`** - Multiple Select
-- `Yoga`
-- `Meditation`
-- `Wellness`
-- `Teacher Training`
-- `Corporate`
-- `Women's Retreat`
-- `Couples`
-- `High-End`
-- `Budget-Friendly`
-- `Large Groups`
-- `Small Groups`
-- `Repeat Potential`
-
-### Financial Tracking
-
-**`estimated_group_size`** - Number
-How many attendees they typically have
-
-**`estimated_retreat_length`** - Number
-How many days their retreats typically run
-
-**`estimated_value`** - Currency
-Potential revenue from this booking
-
-**`quoted_price`** - Currency
-What you quoted them
+| When | Update |
+|------|--------|
+| Before outreach | Review the lead, set `priority_level` |
+| After first contact | Set `contact_status` to "Email Sent" etc. |
+| After response | Update `contact_status`, add to `outreach_notes` |
+| Schedule follow-up | Set `next_follow_up_date` |
+| Lead closes | Update `contact_status` to Won/Lost |
 
 ---
 
-## Best Practices for Outreach
+## Getting Started Checklist
 
-### Personalization is Key
+### Day 1: Orientation
 
-Don't send generic emails! Use the AI-generated data:
+- [ ] Open your Airtable base
+- [ ] Familiarize yourself with the three tables (Centers, Events, Guides)
+- [ ] Explore the linked records - click through to see how they connect
+- [ ] Set up views (see AIRTABLE_VIEWS_SETUP.md for instructions)
 
-**Bad approach:**
-> "Hi, I run a retreat venue and wondered if you'd be interested in hosting here."
+### Day 2: Review High-Priority Leads
 
-**Good approach (using the talking points):**
-> "Hi Sarah, I saw your Ocean Flow retreat in Tulum and loved your focus on connecting surf culture with yoga practice. I run Surfbreak PXM in Puerto Escondido - we have a similar ocean-focused philosophy and I think your retreats would be a perfect fit for our space. Would you be open to a quick call to see if there's potential for your 2025 calendar?"
+- [ ] Filter Centers by `ai_classification` = FACILITATOR
+- [ ] Review the top 20 leads
+- [ ] Read their `profile_summary` and `outreach_talking_points`
+- [ ] Mark any obvious non-fits
 
-### What to Reference
+### Day 3: Begin Outreach
 
-Use information from these fields:
-- `profile_summary` - Understand who they are
-- `outreach_talking_points` - Specific conversation starters
-- `title` - Reference their specific retreats
-- `location_city` - Their current locations
-- `retreat_count` - How active they are
+- [ ] Select your first 5 leads
+- [ ] Personalize outreach using the AI talking points
+- [ ] Send initial contact (email, DM, or call)
+- [ ] Update `contact_status` for each
 
-### Contact Methods (in order of effectiveness)
+### Ongoing
 
-1. **Email** - If you have their email, start here
-2. **Instagram DM** - Many facilitators are active here
-3. **Facebook Message** - For those more active on Facebook
-4. **Phone Call** - Can be effective for established centers
-5. **LinkedIn** - For more corporate/professional facilitators
-
-### Follow-up Cadence
-
-1. **Day 1:** Initial outreach
-2. **Day 4:** First follow-up if no response
-3. **Day 10:** Second follow-up with different angle
-4. **Day 21:** Final follow-up
-5. **After that:** Move to "No Response" and try again in 3 months
-
-### Red Flags to Watch For
-
-Before reaching out, check:
-- If `ai_classification` is "VENUE_OWNER" - they probably own a venue
-- If `ai_red_flags` has concerns - read them first
-- If `priority_score` is below 50 - probably not a good prospect
-
-### Green Flags to Prioritize
-
-Focus on leads with:
-- `is_traveling_facilitator` = TRUE (they definitely rent venues)
-- `priority_score` above 70
-- Multiple `unique_locations` (host at different places)
-- Strong `ai_green_flags`
+- [ ] Check `next_follow_up_date` daily for follow-ups due
+- [ ] Update status as conversations progress
+- [ ] Add notes to `outreach_notes` after each interaction
+- [ ] Celebrate when you close your first booking!
 
 ---
 
 ## Quick Reference
 
-### Views to Use Daily
+### Best Prospects to Contact First
 
-| View | Use Case |
-|------|----------|
-| High Priority (70+) | Start your day here - best prospects |
-| Traveling Facilitators | Your absolute best leads |
-| Needs Review | When you have time for manual research |
+| What to Look For | Why |
+|------------------|-----|
+| `ai_classification` = FACILITATOR | AI identified them as venue renters |
+| Multiple linked Events | Active organizers with ongoing business |
+| Multiple linked Guides | Larger operations with teams |
+| `distance_to_surfbreak_miles` < 1000 | Already active in Mexico region |
+| `google_rating` > 4.0 | Well-reviewed, quality operations |
 
-### Fields to Check Before Outreach
+### Red Flags to Watch
+
+| Warning Sign | What It Means |
+|--------------|---------------|
+| `ai_classification` = VENUE_OWNER | They probably own a venue |
+| `ai_confidence` < 50 | Classification uncertain |
+| Check `ai_red_flags` | Specific concerns identified |
+| No contact information | May be difficult to reach |
+
+### Fields to Always Check Before Outreach
 
 1. `profile_summary` - Who are they?
 2. `outreach_talking_points` - What to say?
-3. `fit_reasoning` - Why are they a good fit?
+3. `fit_reasoning` - Why are they a fit?
 4. `ai_red_flags` - Any concerns?
-
-### Status Flow
-
-```
-Not Started
-    ↓
-Researching → Ready to Contact
-                    ↓
-              Contacted (Email/DM/Phone)
-                    ↓
-         ┌─────────┴─────────┐
-    No Response          In Conversation
-         ↓                    ↓
-    Follow-up Needed    Call Scheduled
-         ↓                    ↓
-    Lost - No Response   Tour Scheduled
-                              ↓
-                        Proposal Sent
-                              ↓
-                         Negotiating
-                              ↓
-                    ┌────────┴────────┐
-               Won - Booked      Lost - Not Interested
-```
+5. `ai_green_flags` - Positive indicators?
 
 ---
 
-## Summary
+## Support & Next Steps
 
-This system gives you:
+### Additional Resources
 
-1. **Qualified leads** - Not just any retreat organizer, but specifically those who rent venues
-2. **Contact information** - Phone, email, social media, website
-3. **AI-powered insights** - Understanding of who each lead is and how to approach them
-4. **Prioritization** - Know exactly who to contact first
-5. **Personalization** - Ready-to-use talking points for each lead
+- **AIRTABLE_VIEWS_SETUP.md** - Instructions for creating useful Airtable views
+- **DOCUMENTATION.md** - Technical documentation for the system
 
-Your job is to:
-1. Review the high-priority leads
-2. Use the AI-generated talking points to personalize outreach
-3. Track your progress in Airtable
-4. Follow up consistently
-5. Convert conversations into bookings!
+### Running New Searches
+
+If you want to expand your lead database with new searches:
+1. Configure new search URLs in the scraper
+2. Run the data pipeline
+3. Import new data via the n8n workflow
+
+### Questions?
+
+Contact your system administrator for technical support or questions about the data pipeline.
 
 ---
 
-*This guide was created for Surfbreak PXM's lead generation system. For technical documentation, see DOCUMENTATION.md.*
+*This guide was created for Surfbreak PXM's Lead Generation System.*

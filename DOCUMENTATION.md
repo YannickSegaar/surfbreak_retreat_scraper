@@ -1003,45 +1003,60 @@ Group fields into sections:
 
 ### Three-Table Structure
 
-For CRM functionality, we recommend a three-table Airtable structure:
+For CRM functionality, we use a three-table Airtable structure:
 
 | Table | Description | Primary Key |
 |-------|-------------|-------------|
-| **Retreat Centers** | Unique organizers (your leads) - one record per organizer with contact info, AI analysis, and sales tracking | `center_id` (= `unique_id`) |
-| **Retreat Events** | Individual retreat listings linked to Centers | `event_id` |
-| **Retreat Guides** | Facilitators who lead retreats, linked to Events | `guide_id` |
+| **Centers** | Unique organizers (your leads) - one record per organizer with contact info, AI analysis, and sales tracking | `center_id` (= `unique_id`) |
+| **Events** | Individual retreat listings linked to Centers | `event_id` |
+| **Guides** | Facilitators who lead retreats, linked to Events | `guide_id` |
+
+**Note:** Tables were renamed from "Retreat Centers/Events/Guides" to "Centers/Events/Guides" for cleaner client-facing names.
 
 ### Table Descriptions
 
-**Retreat Centers:**
+**Centers:**
 > Unique retreat organizers and facilitators - your primary sales leads. Each row represents one organizer, regardless of how many retreats they have listed. This is your main CRM table for tracking outreach and managing the sales pipeline. Includes AI-generated classifications, contact information, and priority scores.
 
-**Retreat Events:**
+**Events:**
 > Individual retreat listings scraped from retreat.guru and bookretreats.com. Each row represents a single retreat event. Multiple events may belong to the same organizer (linked via the Center field). This table stores event-specific details like dates, pricing, and descriptions.
 
-**Retreat Guides:**
+**Guides:**
 > Individual guides, facilitators, and instructors who lead retreat events. The same guide may appear across multiple retreats and multiple organizers. This table enables tracking of specific teachers and understanding team compositions. Guide data is extracted via AI from retreat pages.
+
+### Current Airtable Setup
+
+**Base:** "Surfbreak PXM Retreats" (Base ID: `apphvuFCMeHnhTR2a`)
+
+**Tables:**
+- **Centers** (tblpLLOWn3YsT7nr3) - 265 records
+- **Events** (tblJo1p5voonJoq9p) - 478 records
+- **Guides** (tblE6oR8ktP55GA0C) - 492 records
+
+**Linked Record Fields:**
+- Events → Centers: `Center3` field
+- Events → Guides: `Guides3` field
+- Guides → Centers: `retreat_centers3` field
 
 ### Setup Options
 
 **Option 1: n8n Automated Import (Recommended)**
 
-Use the n8n workflow in `AIRTABLE_N8N_SETUP.md` to automatically:
-- Upsert Centers (deduplicated by `unique_id`)
+Use the n8n workflow (`n8n_workflow_updated.json`) to automatically:
+- Upsert Centers (deduplicated by `center_id`)
 - Create Events linked to Centers
 - Upsert Guides linked to Events
 
 **Option 2: Airtable AI Prompts**
 
-Copy the three prompts from `AIRTABLE_N8N_SETUP.md` into Airtable's AI assistant to create all tables with correct field types and views.
+Copy the prompts from `AIRTABLE_N8N_SETUP.md` into Airtable's AI assistant to create tables with correct field types.
 
 ### Documentation Reference
 
-See `AIRTABLE_N8N_SETUP.md` for:
-- Complete Airtable AI prompts for all three tables
-- n8n workflow JSON for automated import
-- Field mapping reference
-- Relationship diagrams
+See these files for additional setup guidance:
+- `AIRTABLE_N8N_SETUP.md` - n8n workflow setup and Airtable AI prompts
+- `AIRTABLE_VIEWS_SETUP.md` - Manual instructions for creating useful Airtable views
+- `CLIENT_GUIDE.md` - Non-technical guide for end users
 
 ---
 
